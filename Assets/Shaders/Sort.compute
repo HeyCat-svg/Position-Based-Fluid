@@ -1,0 +1,24 @@
+﻿#pragma kernel CompareAndExchange
+
+
+#define SORT_BLOCK_SIZE 512
+
+
+uint _Level;
+uint _LevelMask;
+
+StructuredBuffer<int2> _Input : register(t0);
+RWStructuredBuffer<int2> _Output : register(u0);
+
+bool Compare(int2 left, int2 right) {
+    return (left.x == right.x) ? (left.y <= right.y) : (left.x <= right.x);
+}
+
+
+[numthreads(SORT_BLOCK_SIZE, 1, 1)]
+void CompareAndExchange(uint3 id : SV_DispatchThreadID) {
+    const uint idx = id.x;
+    // idx&_LevelMask==0 then ascending else descending
+    _Output[idx] = (Compare(_Input[idx & ~_Level], _Input[idx | _Level]) == (bool) (_LevelMask & idx)) ?
+        _Input[idx ^ _Level] : _Input[idx];
+}

@@ -1,0 +1,346 @@
+﻿#pragma kernel Update
+#pragma kernel Hash2Grid
+#pragma kernel ClearGridBuffer
+#pragma kernel BuildGridBuffer
+#pragma kernel ReorderParticleBuffer
+#pragma kernel ComputeLambda
+#pragma kernel ComputeDeltaPAndCollision
+#pragma kernel UpdatePos
+#pragma kernel UpdateVel
+#pragma kernel ComputeVorticityAndDeltaV
+#pragma kernel ApplyForceAndUpdatePV
+#pragma kernel DebugKernel
+
+#define PBF_BLOCK_SIZE 512
+
+
+struct Particle {
+    float3 oldPos;
+    float3 newPos;
+    float3 deltaP;
+    float3 velocity;
+    float3 deltaV;
+    float3 force;
+    float3 vorticity;
+    int3 gridCoord;
+    float lambda;
+    float mass;
+    float invMass;
+};
+
+int _ParticleNum;
+float _Poly6Coeff;
+float _SpickyCoeff;
+float _GridH;
+int3 _GridDim;
+float _WQInv;
+float3 _BorderMin;
+float3 _BorderMax;
+float3 _Gravity;
+float _dt;
+float _dtInv;
+float _RestDensity;
+float _H;
+float _K;
+int _N;
+float _EpsilonLambda;
+float _EpsilonVorticity;
+float _CViscosity;
+
+RWStructuredBuffer<Particle> _ParticleBufferUnsorted;
+RWStructuredBuffer<Particle> _ParticleBufferSorted;
+RWStructuredBuffer<int2> _GridParticlePair;
+RWStructuredBuffer<int2> _GridBuffer;
+
+
+int WorldCoord2GridIdx(float3 coord) {
+    int3 gridCoord = (int3)((coord - _BorderMin) / _GridH);
+    gridCoord.x = (gridCoord.x < 0) ? 0 : (gridCoord.x >= _GridDim.x) ? _GridDim.x - 1 : gridCoord.x;
+    gridCoord.y = (gridCoord.y < 0) ? 0 : (gridCoord.y >= _GridDim.y) ? _GridDim.y - 1 : gridCoord.y;
+    gridCoord.z = (gridCoord.z < 0) ? 0 : (gridCoord.z >= _GridDim.z) ? _GridDim.z - 1 : gridCoord.z;
+    return gridCoord.x + gridCoord.y * _GridDim.x +
+        gridCoord.z * _GridDim.x * _GridDim.y;
+}
+
+int3 WorldCoord2GridCoord(float3 coord) {
+    int3 gridCoord = (int3) ((coord - _BorderMin) / _GridH);
+    gridCoord.x = (gridCoord.x < 0) ? 0 : (gridCoord.x >= _GridDim.x) ? _GridDim.x - 1 : gridCoord.x;
+    gridCoord.y = (gridCoord.y < 0) ? 0 : (gridCoord.y >= _GridDim.y) ? _GridDim.y - 1 : gridCoord.y;
+    gridCoord.z = (gridCoord.z < 0) ? 0 : (gridCoord.z >= _GridDim.z) ? _GridDim.z - 1 : gridCoord.z;
+    return gridCoord;
+}
+
+// ret: is coord valid(in border domain)
+bool GridCoord2GridIdx(int3 coord, out int idx) {
+    if (any(coord < int3(0, 0, 0)) || any(coord >= _GridDim)) {
+        return false;
+    }
+    idx = coord.x + coord.y * _GridDim.x + coord.z * _GridDim.x * _GridDim.y;
+    return true;
+}
+
+// return true if coord in domain
+bool BorderCheck(float3 worldCoord) {
+    return !(any(worldCoord < _BorderMin) || any(worldCoord >= _BorderMax));
+}
+
+float3 BorderClamp(float3 worldCoord) {
+    float3 ret = float3(0, 0, 0);
+    ret.x = (worldCoord.x < _BorderMin.x) ? _BorderMin.x : 
+        (worldCoord.x >= _BorderMax.x) ? _BorderMax.x - 1e-3 : worldCoord.x;
+    ret.y = (worldCoord.y < _BorderMin.y) ? _BorderMin.y :
+        (worldCoord.y >= _BorderMax.y) ? _BorderMax.y - 1e-3 : worldCoord.y;
+    ret.z = (worldCoord.z < _BorderMin.z) ? _BorderMin.z :
+        (worldCoord.z >= _BorderMax.z) ? _BorderMax.z - 1e-3 : worldCoord.z;
+
+    return ret;
+}
+
+float Poly6(float l, float h) {
+    if (l > h || l == 0) {
+        return 0;
+    }
+    return _Poly6Coeff * pow(h * h - l * l, 3);
+}
+
+float3 SpikyGradient(float3 r, float h) {
+    float l = length(r);
+    if (l > h || l == 0) {
+        return float3(0, 0, 0);
+    }
+    return _SpickyCoeff * (h - l) * (h - l) / l * r;
+}
+
+float Scorr(float numerator) {
+    float tmp = numerator * _WQInv;
+    return -_K * tmp * tmp * tmp * tmp;
+}
+
+
+[numthreads(PBF_BLOCK_SIZE, 1, 1)]
+void Update(uint3 id : SV_DispatchThreadID) {
+    const uint idx = id.x;
+    // apply force
+    _ParticleBufferUnsorted[idx].velocity += _dt * _ParticleBufferUnsorted[idx].force;
+    // predict position
+    _ParticleBufferUnsorted[idx].newPos = _ParticleBufferUnsorted[idx].oldPos +
+        _dt * _ParticleBufferUnsorted[idx].velocity;
+}
+
+
+[numthreads(PBF_BLOCK_SIZE, 1, 1)]
+void Hash2Grid(uint3 id : SV_DispatchThreadID) {
+    const uint idx = id.x;
+    // int2(gridIdx, particleIdx)
+    _GridParticlePair[idx] = int2(WorldCoord2GridIdx(_ParticleBufferUnsorted[idx].newPos), idx);
+    _ParticleBufferUnsorted[idx].gridCoord = WorldCoord2GridCoord(_ParticleBufferUnsorted[idx].newPos);
+}
+
+
+[numthreads(PBF_BLOCK_SIZE, 1, 1)]
+void ClearGridBuffer(uint3 id : SV_DispatchThreadID) {
+    _GridBuffer[id.x] = int2(-1, -1);
+}
+
+
+// 0000011111122222334444   -> GridIdx
+//       0 1  2  3  4
+// start 0 5  11 16 18
+// end   4 10 15 17 21
+[numthreads(PBF_BLOCK_SIZE, 1, 1)]
+void BuildGridBuffer(uint3 id : SV_DispatchThreadID) {
+    const uint idx = id.x;
+    
+    uint preIdx = (idx == 0) ? (uint)_ParticleNum - 1 : idx - 1;
+    uint nextIdx = (idx == (uint)_ParticleNum - 1) ? 0 : idx + 1;
+    
+    int preGridIdx = _GridParticlePair[preIdx].x;
+    int curGridIdx = _GridParticlePair[idx].x;
+    int nextGridIdx = _GridParticlePair[nextIdx].x;
+    
+    if (preGridIdx != curGridIdx) {
+        _GridBuffer[curGridIdx].x = idx;    // find grid cell start
+    }
+    if (nextGridIdx != curGridIdx) {
+        _GridBuffer[curGridIdx].y = idx;    // find grid cell end
+    }
+}
+
+
+[numthreads(PBF_BLOCK_SIZE, 1, 1)]
+void ReorderParticleBuffer(uint3 id : SV_DispatchThreadID) {
+    const uint idx = id.x;
+    _ParticleBufferSorted[idx] = _ParticleBufferUnsorted[_GridParticlePair[idx].y];
+}
+
+
+[numthreads(PBF_BLOCK_SIZE, 1, 1)]
+void ComputeLambda(uint3 id : SV_DispatchThreadID) {
+    const uint idx = id.x;
+    
+    float densityConstrain = 0;
+    float lambdaDominator = 0;
+    float3 gradient = float3(0, 0, 0);
+    int3 gridCoord = _ParticleBufferSorted[idx].gridCoord;
+    for (int i = gridCoord.x - 1; i <= gridCoord.x + 1; ++i) {
+        for (int j = gridCoord.y - 1; j <= gridCoord.y + 1; ++j) {
+            for (int k = gridCoord.z - 1; k <= gridCoord.z + 1; ++k) {
+                int gridIdx = -1;
+                if (GridCoord2GridIdx(int3(i, j, k), gridIdx)) {
+                    int startParticleIdx = _GridBuffer[gridIdx].x;
+                    int endParticleIdx = _GridBuffer[gridIdx].y;
+                    if (startParticleIdx == -1 || endParticleIdx == -1) {
+                        continue;
+                    }
+                    for (int pIdx = startParticleIdx; pIdx <= endParticleIdx; ++pIdx) {
+                        float3 pij = _ParticleBufferSorted[idx].newPos - _ParticleBufferSorted[pIdx].newPos;
+                        float l = length(pij);
+                        if (l < _H) {
+                            float3 grad = _ParticleBufferSorted[pIdx].mass * SpikyGradient(pij, _H) / _RestDensity;
+                            gradient += grad;
+                            densityConstrain += _ParticleBufferSorted[pIdx].mass * Poly6(l, _H);
+                            lambdaDominator += _ParticleBufferSorted[pIdx].invMass * dot(grad, grad);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    densityConstrain = densityConstrain / _RestDensity - 1.0;
+    lambdaDominator += (_ParticleBufferSorted[idx].invMass * dot(gradient, gradient) + _EpsilonLambda);
+    _ParticleBufferSorted[idx].lambda = -densityConstrain / lambdaDominator;
+}
+
+
+[numthreads(PBF_BLOCK_SIZE, 1, 1)]
+void ComputeDeltaPAndCollision(uint3 id : SV_DispatchThreadID) {
+    const uint idx = id.x;
+    
+    int3 gridCoord = _ParticleBufferSorted[idx].gridCoord;
+    float lambda = _ParticleBufferSorted[idx].lambda;
+    float3 deltaP = float3(0, 0, 0);
+    for (int i = gridCoord.x - 1; i <= gridCoord.x + 1; ++i) {
+        for (int j = gridCoord.y - 1; j <= gridCoord.y + 1; ++j) {
+            for (int k = gridCoord.z - 1; k <= gridCoord.z + 1; ++k) {
+                int gridIdx = -1;
+                if (GridCoord2GridIdx(int3(i, j, k), gridIdx)) {
+                    int startParticleIdx = _GridBuffer[gridIdx].x;
+                    int endParticleIdx = _GridBuffer[gridIdx].y;
+                    if (startParticleIdx == -1 || endParticleIdx == -1) {
+                        continue;
+                    }
+                    for (int pIdx = startParticleIdx; pIdx <= endParticleIdx; ++pIdx) {
+                        float3 pij = _ParticleBufferSorted[idx].newPos - _ParticleBufferSorted[pIdx].newPos;
+                        float l = length(pij);
+                        if (l < _H) {
+                            float3 grad = _ParticleBufferSorted[pIdx].mass * SpikyGradient(pij, _H);
+                            deltaP += (lambda + _ParticleBufferSorted[pIdx].lambda + Scorr(Poly6(l, _H))) * grad;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    deltaP /= _RestDensity;
+    
+    // collision with border
+    float3 pos = BorderClamp(_ParticleBufferSorted[idx].newPos + deltaP);
+    
+    _ParticleBufferSorted[idx].deltaP = pos - _ParticleBufferSorted[idx].newPos;
+}
+
+
+[numthreads(PBF_BLOCK_SIZE, 1, 1)]
+void UpdatePos(uint3 id : SV_DispatchThreadID) {
+    const uint idx = id.x;
+    _ParticleBufferSorted[idx].newPos += _ParticleBufferSorted[idx].deltaP;
+}
+
+
+[numthreads(PBF_BLOCK_SIZE, 1, 1)]
+void UpdateVel(uint3 id : SV_DispatchThreadID) {
+    const int idx = id.x;
+    _ParticleBufferSorted[idx].velocity = _dtInv * (_ParticleBufferSorted[idx].newPos - _ParticleBufferSorted[idx].oldPos);
+}
+
+
+[numthreads(PBF_BLOCK_SIZE, 1, 1)]
+void ComputeVorticityAndDeltaV(uint3 id : SV_DispatchThreadID) {
+    const int idx = id.x;
+    
+    int3 gridCoord = _ParticleBufferSorted[idx].gridCoord;
+    float3 vorticity = float3(0, 0, 0);
+    float3 deltaV = float3(0, 0, 0);
+    for (int i = gridCoord.x - 1; i <= gridCoord.x + 1; ++i) {
+        for (int j = gridCoord.y - 1; j <= gridCoord.y + 1; ++j) {
+            for (int k = gridCoord.z - 1; k <= gridCoord.z + 1; ++k) {
+                int gridIdx = -1;
+                if (GridCoord2GridIdx(int3(i, j, k), gridIdx)) {
+                    int startParticleIdx = _GridBuffer[gridIdx].x;
+                    int endParticleIdx = _GridBuffer[gridIdx].y;
+                    if (startParticleIdx == -1 || endParticleIdx == -1) {
+                        continue;
+                    }
+                    for (int pIdx = startParticleIdx; pIdx <= endParticleIdx; ++pIdx) {
+                        float3 pij = _ParticleBufferSorted[idx].newPos - _ParticleBufferSorted[pIdx].newPos;
+                        float l = length(pij);
+                        if (l < _H) {
+                            float3 vji = _ParticleBufferSorted[pIdx].velocity - _ParticleBufferSorted[idx].velocity;
+                            vorticity += cross(vji, -SpikyGradient(pij, _H));
+                            deltaV += (vji * Poly6(l, _H));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    deltaV *= _CViscosity;
+    _ParticleBufferSorted[idx].deltaV = deltaV;
+    _ParticleBufferSorted[idx].vorticity = vorticity;
+}
+
+
+[numthreads(PBF_BLOCK_SIZE, 1, 1)]
+void ApplyForceAndUpdatePV(uint3 id : SV_DispatchThreadID) {
+    const uint idx = id.x;
+    
+    int3 gridCoord = _ParticleBufferSorted[idx].gridCoord;
+    float maxVorticityMag = 0;
+    float3 maxVorticityPos = float3(0, 0, 0);
+    for (int i = gridCoord.x - 1; i <= gridCoord.x + 1; ++i) {
+        for (int j = gridCoord.y - 1; j <= gridCoord.y + 1; ++j) {
+            for (int k = gridCoord.z - 1; k <= gridCoord.z + 1; ++k) {
+                int gridIdx = -1;
+                if (GridCoord2GridIdx(int3(i, j, k), gridIdx)) {
+                    int startParticleIdx = _GridBuffer[gridIdx].x;
+                    int endParticleIdx = _GridBuffer[gridIdx].y;
+                    if (startParticleIdx == -1 || endParticleIdx == -1) {
+                        continue;
+                    }
+                    for (int pIdx = startParticleIdx; pIdx <= endParticleIdx; ++pIdx) {
+                        float3 pij = _ParticleBufferSorted[idx].newPos - _ParticleBufferSorted[pIdx].newPos;
+                        float l = length(pij);
+                        if (l < _H) {
+                            float vorticityMag = length(_ParticleBufferSorted[pIdx].vorticity);
+                            maxVorticityPos = (vorticityMag > maxVorticityMag) ? _ParticleBufferSorted[pIdx].newPos : maxVorticityPos;
+                            maxVorticityMag = (vorticityMag > maxVorticityMag) ? vorticityMag : maxVorticityMag;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    float3 N = maxVorticityPos - _ParticleBufferSorted[idx].newPos;
+    N /= (length(N) + 1e-4);
+    _ParticleBufferSorted[idx].force = _Gravity + _EpsilonVorticity * cross(N, _ParticleBufferSorted[idx].vorticity);
+    _ParticleBufferSorted[idx].velocity += _ParticleBufferSorted[idx].deltaV;
+    _ParticleBufferSorted[idx].oldPos = _ParticleBufferSorted[idx].newPos;
+}
+
+
+[numthreads(PBF_BLOCK_SIZE, 1, 1)]
+void DebugKernel(uint3 id : SV_DispatchThreadID) {
+    const uint idx = id.x;
+    _ParticleBufferSorted[idx].oldPos = _ParticleBufferSorted[idx].newPos;
+}
