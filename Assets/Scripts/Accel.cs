@@ -1,4 +1,4 @@
-ï»¿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using PositionBasedFluid.DataStructure;
@@ -22,7 +22,7 @@ namespace PositionBasedFluid {
         Triangle[] m_MeshTriangles;
         Node m_TreeRoot = null;
         int m_MaxDepth = 0, m_LeafNum = 0, m_NodeNum = 0;
-        int m_SplitTermination = 5;         // å¶å­èŠ‚ç‚¹çš„ä¸‰è§’å½¢æ•°é‡å°äºè¯¥å€¼æ—¶ä¸å†åˆ†è£‚
+        int m_SplitTermination = 5;         // Ò¶×Ó½ÚµãµÄÈı½ÇĞÎÊıÁ¿Ğ¡ÓÚ¸ÃÖµÊ±²»ÔÙ·ÖÁÑ
 
         void Split(Node node, int depth) {
             m_NodeNum++;
@@ -55,7 +55,7 @@ namespace PositionBasedFluid {
                 }
             });
 
-            // é‡å»ºå·¦å³èŠ‚ç‚¹çš„ä¸‰è§’å½¢åŒ…å›´ç›’
+            // ÖØ½¨×óÓÒ½ÚµãµÄÈı½ÇĞÎ°üÎ§ºĞ
             int triNum = node.tris.Count;
             Vector3 minPos = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
             Vector3 maxPos = new Vector3(float.MinValue, float.MinValue, float.MinValue);
@@ -86,16 +86,16 @@ namespace PositionBasedFluid {
             Split(node.right, depth + 1);
         }
 
-        // è¿”å›nodeåŒºåŸŸå½“ä¸­é®æŒ¡pçš„ä¸‰è§’å½¢é¢ç‰‡æ•°é‡
+        // ·µ»ØnodeÇøÓòµ±ÖĞÕÚµ²pµÄÈı½ÇĞÎÃæÆ¬ÊıÁ¿
         int CheckInnerRegionHelper(Node node, Vector3 p) {
             if (node == null) {
                 return 0;
             }
-            // æ£€æŸ¥åŒ…å›´ç›’
+            // ¼ì²é°üÎ§ºĞ
             if (!node.bound.CheckCover(p)) {
                 return 0;
             }
-            // å¶å­èŠ‚ç‚¹
+            // Ò¶×Ó½Úµã
             if (node.left == null || node.right == null) {
                 int triNum = node.tris.Count;
                 int coverTriNum = 0;
@@ -123,7 +123,7 @@ namespace PositionBasedFluid {
             if (m_Mesh == null) {
                 return;
             }
-            // å¡«å……ä¸‰è§’å½¢
+            // Ìî³äÈı½ÇĞÎ
             List<Vector3> vertices = new List<Vector3>();
             m_Mesh.GetVertices(vertices);
             int[] triangles = m_Mesh.GetTriangles(0);
@@ -135,7 +135,7 @@ namespace PositionBasedFluid {
                     vertices[triangles[3 * i + 1]],
                     vertices[triangles[3 * i + 2]]);
             }
-            // è®¡ç®—meshåŒ…å›´ç›’
+            // ¼ÆËãmesh°üÎ§ºĞ
             Vector3 minPos = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
             Vector3 maxPos = new Vector3(float.MinValue, float.MinValue, float.MinValue);
             int vertexNum = vertices.Count;
@@ -145,23 +145,23 @@ namespace PositionBasedFluid {
                     maxPos[j] = Mathf.Max(maxPos[j], vertices[i][j]);
                 }
             }
-            // åˆ›å»ºæ ‘æ ¹èŠ‚ç‚¹
+            // ´´½¨Ê÷¸ù½Úµã
             m_TreeRoot = new Node(new AABB(minPos, maxPos));
             m_TreeRoot.tris = new List<int>();
             for (int i = 0; i < triNum; ++i) {
                 m_TreeRoot.tris.Add(i);
             }
-            // å¼€å§‹åˆ†è£‚
+            // ¿ªÊ¼·ÖÁÑ
             m_MaxDepth = 0; m_LeafNum = 0; m_NodeNum = 0;
             Split(m_TreeRoot, 1);
             Debug.Log("MaxDepth:" + m_MaxDepth + "LeafNum:" + m_LeafNum + "NodeNum:" + m_NodeNum);
         }
 
         public void Clear() {
-            m_TreeRoot = null;  // GCå¥½åƒå¹¶ä¸éœ€è¦æ‰‹åŠ¨é‡Šæ”¾
+            m_TreeRoot = null;  // GCºÃÏñ²¢²»ĞèÒªÊÖ¶¯ÊÍ·Å
         }
 
-        // è¿”å›pæ˜¯å¦åœ¨æ¨¡å‹å†…éƒ¨
+        // ·µ»ØpÊÇ·ñÔÚÄ£ĞÍÄÚ²¿
         public bool CheckInnerRegion(Vector3 p) {
             int triCoverNum = CheckInnerRegionHelper(m_TreeRoot, p);
             if (triCoverNum % 2 == 0) {
@@ -172,6 +172,11 @@ namespace PositionBasedFluid {
             }
         }
 
+        public AABB GetBoundingBox() {
+            if (m_TreeRoot == null) {
+                return new AABB(Vector3.zero, Vector3.zero);
+            }
+            return m_TreeRoot.bound;
+        }
     }
 }
-

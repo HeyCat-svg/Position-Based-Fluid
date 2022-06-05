@@ -1,4 +1,4 @@
-ï»¿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -35,7 +35,7 @@ namespace PositionBasedFluid.DataStructure {
         public bool CheckCover(Vector3 p, int axis = 2) {
             switch (axis) {
                 case 0:             // x axis
-                    if (p.y >= minPos.y && p.y <= maxPos.y && 
+                    if (p.y >= minPos.y && p.y <= maxPos.y &&
                         p.z >= minPos.z && p.z <= maxPos.z &&
                         p.x < maxPos.x) {
                         return true;
@@ -79,7 +79,7 @@ namespace PositionBasedFluid.DataStructure {
             set { points[index] = value; }
         }
 
-        // è¿”å›žé‡å¿ƒ
+        // ·µ»ØÖØÐÄ
         public Vector3 GetCenter() {
             Vector3 ret = Vector3.zero;
             for (int i = 0; i < 3; ++i) {
@@ -88,7 +88,7 @@ namespace PositionBasedFluid.DataStructure {
             return ret / 3.0f;
         }
 
-        // è¿”å›žAABBåŒ…å›´ç›’
+        // ·µ»ØAABB°üÎ§ºÐ
         public AABB GetBoundingBox() {
             Vector3 minPos = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
             Vector3 maxPos = new Vector3(float.MinValue, float.MinValue, float.MinValue);
@@ -126,9 +126,9 @@ namespace PositionBasedFluid.DataStructure {
             }
             // compute barycentric
             Vector3 ret = Vector3.Cross(
-                new Vector3(projTriPts[1].x - projTriPts[0].x, projTriPts[2].x - projTriPts[0].x, projTriPts[0].x - projP.x), 
+                new Vector3(projTriPts[1].x - projTriPts[0].x, projTriPts[2].x - projTriPts[0].x, projTriPts[0].x - projP.x),
                 new Vector3(projTriPts[1].y - projTriPts[0].y, projTriPts[2].y - projTriPts[0].y, projTriPts[0].y - projP.y));
-            if (Mathf.Abs(ret.z) < 1e-5) {      // æ— è§£
+            if (Mathf.Abs(ret.z) < 1e-5) {      // ÎÞ½â
                 return new Vector3(-1, 1, 1);
             }
             return new Vector3(1.0f - (ret.x + ret.y) / ret.z, ret.x / ret.z, ret.y / ret.z);
@@ -136,11 +136,11 @@ namespace PositionBasedFluid.DataStructure {
 
         public bool CheckCover(Vector3 p, int axis = 2) {
             Vector3 baryCoord = Barycentric(p, axis);
-            // æŠ•å½±é¢æ˜¯å¦é‡åˆ
-            if (baryCoord.x < 0 || baryCoord.y < 0 || baryCoord.z < 0) {    // æŠ•å½±é¢ä¸é‡åˆ
+            // Í¶Ó°ÃæÊÇ·ñÖØºÏ
+            if (baryCoord.x < 0 || baryCoord.y < 0 || baryCoord.z < 0) {    // Í¶Ó°Ãæ²»ÖØºÏ
                 return false;
             }
-            // æ£€æŸ¥ä¸‰è§’å½¢æ˜¯å¦åœ¨ç‚¹çš„å‰æ–¹
+            // ¼ì²éÈý½ÇÐÎÊÇ·ñÔÚµãµÄÇ°·½
             float depth = 0;
             for (int i = 0; i < 3; ++i) {
                 depth += baryCoord[i] * points[i][axis];
@@ -185,6 +185,20 @@ namespace PositionBasedFluid.DataStructure {
             else {
                 this.invMass = 1.0f / mass;
             }
+        }
+    }
+
+    public struct Voxel {
+        public bool isInner;        // ÊÇ·ñÔÚmeshÄÚ²¿
+        public float distance;      // ÓÐÏò¾àÀë
+        public Vector3 distGrad;    // ÓÐÏò¾àÀë³¡ÌÝ¶È
+        public Vector3 position;    // Voxel ÖÐÐÄËùÔÚµÄmesh¾Ö²¿×ø±ê
+
+        public Voxel(bool _isInner, Vector3 pos) {
+            isInner = _isInner;
+            distance = 0;
+            distGrad = Vector3.zero;
+            position = pos;
         }
     }
 }
