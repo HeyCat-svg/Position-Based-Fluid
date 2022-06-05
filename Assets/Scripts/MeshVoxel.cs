@@ -41,6 +41,13 @@ namespace PositionBasedFluid {
             Graphics.DrawProceduralNow(MeshTopology.Points, m_VoxelNum);
         }
 
+        void OnDestroy() {
+            if (m_VoxelBuffer != null) {
+                m_VoxelBuffer.Release();
+                m_VoxelBuffer = null;
+            }
+        }
+
         void Init() {
             if (m_Mesh == null || m_VoxelRenderMat == null) {
                 return;

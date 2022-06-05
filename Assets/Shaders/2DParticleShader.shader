@@ -58,46 +58,47 @@
 					output.col = (_Particles[id].mass > 1) ? float4(1, 0, 0, 1) : float4(1, 1, 1, 1);
 					// output.col = float4(0.7 + 0.3 *_Particles[id].velocity, 0.7,1);
 					return output;
-				 }
+				}
 
-				 [maxvertexcount(4)]
-				 void geom(point v2g input[1], inout TriangleStream<v2g> outStream) {
-					 v2g output;
+				[maxvertexcount(4)]
+				void geom(point v2g input[1], inout TriangleStream<v2g> outStream) {
+					v2g output;
 
-					 float4 pos = input[0].pos;
-					 float4 col = input[0].col;
+					float4 pos = input[0].pos;
+					float4 col = input[0].col;
 
-					 for (int x = 0; x < 2; x++) {
-						 for (int y = 0; y < 2; y++) {
-							 float4x4 billboardMatrix = UNITY_MATRIX_V;
-							 billboardMatrix._m03 =
-								 billboardMatrix._m13 =
-								 billboardMatrix._m23 =
-								 billboardMatrix._m33 = 0;
+					float4x4 billboardMatrix = UNITY_MATRIX_V;
+					billboardMatrix._m03 =
+					billboardMatrix._m13 =
+					billboardMatrix._m23 =
+					billboardMatrix._m33 = 0;
+					billboardMatrix = transpose(billboardMatrix);
 
-							 float2 tex = float2(x, y);
-							 output.tex = tex;
+					for (int x = 0; x < 2; x++) {
+						for (int y = 0; y < 2; y++) {
+							float2 tex = float2(x, y);
+							output.tex = tex;
 
-							 output.pos = pos + mul(transpose(billboardMatrix), float4((tex * 2 - float2(1, 1)) * _ParticleRad, 0, 1));
-							 // output.pos = pos + mul(float4((tex * 2 - float2(1, 1)) * _ParticleRad, 0, 1), billboardMatrix);
-							 output.pos = mul(UNITY_MATRIX_VP, output.pos);
+							output.pos = pos + mul(billboardMatrix, float4((tex * 2 - float2(1, 1)) * _ParticleRad, 0, 0));
+							// output.pos = pos + mul(float4((tex * 2 - float2(1, 1)) * _ParticleRad, 0, 1), billboardMatrix);
+							output.pos = mul(UNITY_MATRIX_VP, output.pos);
 
-							 output.col = col;
+							output.col = col;
 
-							 outStream.Append(output);
-						 }
-					 }
+							outStream.Append(output);
+						}
+					}
 
-					 outStream.RestartStrip();
-				 }
+					outStream.RestartStrip();
+				}
 
-				 fixed4 frag(v2g i) : COLOR{
-					 float4 col = tex2D(_MainTex, i.tex) * i.col;
-					 if (col.a < 0.3) discard;
-					 return fixed4(col.xyz, 1);
-				 }
+				fixed4 frag(v2g i) : COLOR{
+					float4 col = tex2D(_MainTex, i.tex) * i.col;
+					if (col.a < 0.3) discard;
+					return fixed4(col.xyz, 1);
+				}
 
-				 ENDCG
-			 }
+				ENDCG
+			}
 		}
 }

@@ -189,16 +189,16 @@ namespace PositionBasedFluid.DataStructure {
     }
 
     public struct Voxel {
-        public bool isInner;        // 是否在mesh内部
-        public float distance;      // 有向距离
         public Vector3 distGrad;    // 有向距离场梯度
         public Vector3 position;    // Voxel 中心所在的mesh局部坐标
+        public float distance;      // 有向距离
+        public float isInner;       // 是否在mesh内部
 
         public Voxel(bool _isInner, Vector3 pos) {
-            isInner = _isInner;
-            distance = 0;
-            distGrad = Vector3.zero;
-            position = pos;
+            this.isInner = (_isInner) ? 1.0f : 0.0f;
+            this.distance = 0;
+            this.distGrad = Vector3.zero;
+            this.position = pos;
         }
     }
 }

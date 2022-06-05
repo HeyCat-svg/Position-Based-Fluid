@@ -1,7 +1,7 @@
 ﻿Shader "Custom/Voxel2D" {
 	Properties{
 		_MainTex("Texture", 2D) = "white" {}
-		_ParticleRad("ParticleRadius", Range(0.01, 1)) = 0.05
+		_ParticleRad("ParticleRadius", Range(0.0001, 1)) = 0.05
 	}
 
 		SubShader{
@@ -22,10 +22,10 @@
 				float _ParticleRad;
 
 				struct Voxel {
-					bool isInner;
-					float distance;
 					float3 distGrad;
 					float3 position;
+					float distance;
+					float isInner;			// 0:outside 1:inside
 				};
 				StructuredBuffer<Voxel> _Voxels;
 				int _VoxelNum;
@@ -41,7 +41,7 @@
 					v2g output;
 					output.pos = mul(UNITY_MATRIX_M, float4(_Voxels[id].position, 1));
 					output.tex = float2(0, 0);
-					output.col = (_Voxels[id].isInner) ? float4(1, 1, 1, 1) : float4(0, 0, 0, 1);
+					output.col = (_Voxels[id].isInner < 1e-3) ? float4(0, 0, 0, 0) : float4(1, 1, 1, 1);
 					return output;
 				}
 
@@ -58,7 +58,6 @@
 					billboardMatrix._m23 =
 					billboardMatrix._m33 = 0;
 					billboardMatrix = transpose(billboardMatrix);
-
 
 					for (int x = 0; x < 2; x++) {
 						for (int y = 0; y < 2; y++) {
