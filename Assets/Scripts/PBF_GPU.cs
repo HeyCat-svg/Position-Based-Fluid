@@ -222,7 +222,7 @@ namespace PositionBasedFluid {
 
         void InitParticles() {
             m_ParticleArray = new Particle[m_ParticleNum];
-            AABB waterDomain = new AABB(m_BorderMin + 0.2f * m_Border.GetRange(), m_BorderMax - 0.2f * m_Border.GetRange());
+            AABB waterDomain = new AABB(m_BorderMin + 0.1f * m_Border.GetRange(), m_BorderMax - 0.1f * m_Border.GetRange());
             // AABB waterDomain = m_Border;
             // part particles with mass 2
             for (int i = 0; i < m_ParticleNum / 4; ++i) {

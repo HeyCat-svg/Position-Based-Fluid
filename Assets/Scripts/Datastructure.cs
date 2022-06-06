@@ -196,7 +196,7 @@ namespace PositionBasedFluid.DataStructure {
 
         public Voxel(bool _isInner, Vector3 pos) {
             this.isInner = (_isInner) ? 1.0f : 0.0f;
-            this.distance = 0;
+            this.distance = float.MaxValue;
             this.distGrad = Vector3.zero;
             this.position = pos;
         }

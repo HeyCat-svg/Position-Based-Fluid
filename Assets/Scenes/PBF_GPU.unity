@@ -172,7 +172,7 @@ MonoBehaviour:
   m_Gravity: {x: 0, y: -9.8, z: 0}
   m_dt: 0.016
   m_IterNum: 8
-  REST_DENSITY: 0.1
+  REST_DENSITY: 0.2
   H: 3.5
   K: 0.1
   N: 4

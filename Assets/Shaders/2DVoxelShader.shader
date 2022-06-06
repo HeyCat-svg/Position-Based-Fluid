@@ -20,6 +20,7 @@
 
 				sampler2D _MainTex;
 				float _ParticleRad;
+				float _MaxDistance;
 
 				struct Voxel {
 					float3 distGrad;
@@ -41,7 +42,8 @@
 					v2g output;
 					output.pos = mul(UNITY_MATRIX_M, float4(_Voxels[id].position, 1));
 					output.tex = float2(0, 0);
-					output.col = (_Voxels[id].isInner < 1e-3) ? float4(0, 0, 0, 0) : float4(1, 1, 1, 1);
+					float col = (_Voxels[id].isInner < 1e-3) ? 0 : _Voxels[id].distance / _MaxDistance;
+					output.col = (_Voxels[id].isInner < 1e-3) ? float4(0, 0, 0, 0) : float4(col, col, col, 1);
 					return output;
 				}
 

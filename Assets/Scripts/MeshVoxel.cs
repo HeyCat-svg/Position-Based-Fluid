@@ -15,6 +15,8 @@ namespace PositionBasedFluid {
         int m_VoxelNum = 0;
         ComputeBuffer m_VoxelBuffer;
 
+        float m_MaxDistance;
+
         public Mesh m_Mesh;
         public float m_VoxelH = 0.1f;
         public Material m_VoxelRenderMat;
@@ -38,6 +40,7 @@ namespace PositionBasedFluid {
             m_VoxelRenderMat.SetBuffer("_Voxels", m_VoxelBuffer);
             m_VoxelRenderMat.SetInt("_VoxelNum", m_VoxelNum);
             m_VoxelRenderMat.SetVector("_VoxelDim", new Vector4(m_VoxelDim.x, m_VoxelDim.y, m_VoxelDim.z, 0));
+            m_VoxelRenderMat.SetFloat("_MaxDistance", m_MaxDistance);
             Graphics.DrawProceduralNow(MeshTopology.Points, m_VoxelNum);
         }
 
@@ -65,6 +68,12 @@ namespace PositionBasedFluid {
                 Vector3 p = VoxelCoord2VoxelPos(VoxelIdx2Coord(i));
                 m_Voxels[i] = new Voxel(m_AccelStruct.CheckInnerRegion(p), p);
             }
+
+            // 计算有向距离和梯度
+            ComputeDistanceField();
+
+            // 计算debug变量
+            ComputeDebugVar();
 
             // init compute buffer
             m_VoxelBuffer = new ComputeBuffer(m_VoxelNum, Marshal.SizeOf(typeof(Voxel)));
@@ -98,6 +107,73 @@ namespace PositionBasedFluid {
             }
             return m_BoundingBox.minPos + 
                 new Vector3(coord.x + 0.5f, coord.y + 0.5f, coord.z + 0.5f) * m_VoxelH;
+        }
+
+        // 暴力粗略搜索空间点到mesh的最小距离
+        void ComputeDistanceField() {
+            if (m_Mesh == null) {
+                return;
+            }
+            List<Vector3> vertices = new List<Vector3>();
+            m_Mesh.GetVertices(vertices);
+            int[] trisArray = m_Mesh.GetTriangles(0);
+            int triNum = trisArray.Length / 3;
+            for (int i = 0; i < triNum; ++i) {
+                Vector3 center = 1.0f / 3.0f * (
+                    vertices[trisArray[3 * i]] +
+                    vertices[trisArray[3 * i + 1]] +
+                    vertices[trisArray[3 * i + 2]]);
+                for (int j = 0; j < m_VoxelNum; ++j) {
+                    float dist = (center - m_Voxels[j].position).magnitude;
+                    m_Voxels[j].distance = (dist < m_Voxels[j].distance) ? dist : m_Voxels[j].distance;
+                }
+            }
+            // 距离变成有向距离
+            for (int i = 0; i < m_VoxelNum; ++i) {
+                m_Voxels[i].distance = (m_Voxels[i].isInner < 1e-3) ?
+                    Mathf.Abs(m_Voxels[i].distance) : -Mathf.Abs(m_Voxels[i].distance);
+            }
+            // 计算有向距离场梯度
+            for (int i = 0; i < m_VoxelNum; ++i) {
+                Vector3Int voxelCoord = VoxelIdx2Coord(i);
+                Vector3 distMin = Vector3.zero, distMax = Vector3.zero, dominator = Vector3.zero;       // 梯度差分的左右两端和分母
+                for (int j = 0; j < 3; ++j) {
+                    if (voxelCoord[j] - 1 < 0) {
+                        distMin[j] = m_Voxels[i].distance;
+                        dominator[j] = 0;
+                    }
+                    else {
+                        Vector3Int coord = voxelCoord;
+                        coord[j] -= 1;
+                        distMin[j] = m_Voxels[VoxelCoord2Idx(coord)].distance;
+                        dominator[j] = m_VoxelH;
+                    }
+                    if (voxelCoord[j] + 1 >= m_VoxelDim[j]) {
+                        distMax[j] = m_Voxels[i].distance;
+                        dominator[j] += 0;
+                    }
+                    else {
+                        Vector3Int coord = voxelCoord;
+                        coord[j] += 1;
+                        distMax[j] = m_Voxels[VoxelCoord2Idx(coord)].distance;
+                        dominator[j] += m_VoxelH;
+                    }
+                }
+                // 计算差分
+                distMax -= distMin;
+                for (int j = 0; j < 3; ++j) {
+                    distMax[j] /= dominator[j];
+                }
+                m_Voxels[i].distGrad = distMax;
+            }
+        }
+
+        void ComputeDebugVar() {
+            // 计算mesh内部的最大距离
+            m_MaxDistance = 0;
+            for (int i = 0; i < m_VoxelNum; ++i) {
+                m_MaxDistance = (m_Voxels[i].distance < m_MaxDistance) ? m_Voxels[i].distance : m_MaxDistance;
+            }
         }
     }
 }
