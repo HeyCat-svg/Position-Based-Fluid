@@ -5,7 +5,7 @@ using UnityEngine;
 using PositionBasedFluid.DataStructure;
 
 namespace PositionBasedFluid {
-
+    [RequireComponent(typeof(MyRigidbody))]
     public class MeshVoxel : MonoBehaviour {
 
         Accel m_AccelStruct;
@@ -77,6 +77,12 @@ namespace PositionBasedFluid {
             // init compute buffer
             m_VoxelBuffer = new ComputeBuffer(m_VoxelNum, Marshal.SizeOf(typeof(Voxel)));
             m_VoxelBuffer.SetData(m_Voxels);
+
+            // 初始化刚体粒子组件
+            MyRigidbody rbComp = GetComponent<MyRigidbody>();
+            if (rbComp) {
+                rbComp.Init();
+            }
         }
 
         Vector3Int VoxelIdx2Coord(int idx) {
@@ -173,6 +179,10 @@ namespace PositionBasedFluid {
             for (int i = 0; i < m_VoxelNum; ++i) {
                 m_MaxDistance = (m_Voxels[i].distance < m_MaxDistance) ? m_Voxels[i].distance : m_MaxDistance;
             }
+        }
+
+        public Voxel[] GetVoxels() {
+            return m_Voxels;
         }
     }
 }

@@ -403,6 +403,7 @@ MonoBehaviour:
   m_Mesh: {fileID: -2432090755550338912, guid: 412800a085ec0ea469373b72c7a33709, type: 3}
   m_VoxelH: 0.25
   m_VoxelRenderMat: {fileID: 2100000, guid: 9c528104c73d9f0438cacf525e8cceaf, type: 2}
+  showVoxels: 1
 --- !u!4 &1508321518
 Transform:
   m_ObjectHideFlags: 0
