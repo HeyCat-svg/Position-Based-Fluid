@@ -20,9 +20,8 @@ namespace PositionBasedFluid {
         public Mesh m_Mesh;
         public float m_VoxelH = 0.1f;
         public Material m_VoxelRenderMat;
+        public bool showVoxels = true;
         
-        
-
         void Start() {
             Init();
         }
@@ -33,7 +32,7 @@ namespace PositionBasedFluid {
         }
 
         void OnRenderObject() {
-            if (m_VoxelRenderMat == null) {
+            if (m_VoxelRenderMat == null || !showVoxels) {
                 return;
             }
             m_VoxelRenderMat.SetPass(0);
@@ -164,7 +163,7 @@ namespace PositionBasedFluid {
                 for (int j = 0; j < 3; ++j) {
                     distMax[j] /= dominator[j];
                 }
-                m_Voxels[i].distGrad = distMax;
+                m_Voxels[i].distGrad = distMax.normalized;
             }
         }
 

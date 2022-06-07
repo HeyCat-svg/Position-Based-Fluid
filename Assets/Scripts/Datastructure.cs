@@ -188,6 +188,12 @@ namespace PositionBasedFluid.DataStructure {
         }
     }
 
+    public struct RigidBodyParticle {
+        Vector3 rLocal;             // 局部空间重心到粒子的位移
+        Vector3 rWorld;             // 世界空间重心到粒子的位移
+
+    }
+
     public struct Voxel {
         public Vector3 distGrad;    // 有向距离场梯度
         public Vector3 position;    // Voxel 中心所在的mesh局部坐标
