@@ -8,6 +8,7 @@ namespace PositionBasedFluid {
     [RequireComponent(typeof(MyRigidbody))]
     public class MeshVoxel : MonoBehaviour {
 
+        bool isInit = false;
         Accel m_AccelStruct;
         Voxel[] m_Voxels;
         Vector3Int m_VoxelDim;
@@ -22,17 +23,15 @@ namespace PositionBasedFluid {
         public Material m_VoxelRenderMat;
         public bool showVoxels = true;
         
-        void Start() {
-            Init();
-        }
 
+        void Start() {}
 
         void Update() {
 
         }
 
         void OnRenderObject() {
-            if (m_VoxelRenderMat == null || !showVoxels) {
+            if (m_VoxelRenderMat == null || !showVoxels || !isInit) {
                 return;
             }
             m_VoxelRenderMat.SetPass(0);
@@ -50,7 +49,7 @@ namespace PositionBasedFluid {
             }
         }
 
-        void Init() {
+        public void Init() {
             if (m_Mesh == null || m_VoxelRenderMat == null) {
                 return;
             }
@@ -78,11 +77,7 @@ namespace PositionBasedFluid {
             m_VoxelBuffer = new ComputeBuffer(m_VoxelNum, Marshal.SizeOf(typeof(Voxel)));
             m_VoxelBuffer.SetData(m_Voxels);
 
-            // 初始化刚体粒子组件
-            MyRigidbody rbComp = GetComponent<MyRigidbody>();
-            if (rbComp) {
-                rbComp.Init();
-            }
+            isInit = true;
         }
 
         Vector3Int VoxelIdx2Coord(int idx) {

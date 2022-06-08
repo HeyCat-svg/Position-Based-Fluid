@@ -15,20 +15,20 @@ namespace PositionBasedFluid {
         public float m_Mass = 1.0f;
         
     
-        void Start() {
-            
-        }
+        void Start() {}
 
         void Update() {
         
         }
 
-        // 应该在MeshVoxel初始化完毕后调用
         public void Init() {
             m_MeshVoxel = GetComponent<MeshVoxel>();
             if (m_MeshVoxel == null) {
                 return;
             }
+            // 先初始化MeshVoxel
+            m_MeshVoxel.Init();
+
             // 计算局部空间的重心坐标 以及 统计粒子数目
             m_Barycenter = Vector3.zero;
             m_ParticleNum = 0;

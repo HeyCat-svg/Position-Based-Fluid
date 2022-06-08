@@ -189,16 +189,26 @@ namespace PositionBasedFluid.DataStructure {
     }
 
     public struct RigidbodyParticle {
-        Vector3 rLocal;             // 局部空间重心到粒子的位移
-        Vector3 rWorld;             // 世界空间重心到粒子的位移
-        Vector3 distGrad;
-        float distance;
+        public Vector3 rLocal;              // 局部空间重心到粒子的位移
+        public Vector3 rWorld;              // 世界空间重心到粒子的位移
+        public Vector3 distGrad;
+        public float distance;
         
         public RigidbodyParticle(Vector3 _rLocal, Vector3 _distGrad, float _distance) {
             rLocal = _rLocal;
             rWorld = _rLocal;
             distGrad = _distGrad;
             distance = _distance;
+        }
+    }
+
+    public struct RigidbodyData {
+        public Vector2Int particleIdxRange;     // [startIdx, endIdx]两端闭的
+        public Matrix4x4 local2world;           // mesh 空间到世界坐标
+
+        public RigidbodyData(int startIdx, int endIdx, Matrix4x4 l2w) {
+            particleIdxRange = new Vector2Int(startIdx, endIdx);
+            local2world = l2w;
         }
     }
 
