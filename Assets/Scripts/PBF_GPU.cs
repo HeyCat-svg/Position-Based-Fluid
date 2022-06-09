@@ -12,6 +12,8 @@ namespace PositionBasedFluid {
         const int PBF_BLOCK_SIZE = 512;
 
         int m_ParticleNum;
+        int m_RigbodyNum;
+        int m_RigbodyParticleNum;
         AABB m_Border;
         float m_Poly6Coeff;
         float m_SpikyCoeff;
@@ -20,7 +22,9 @@ namespace PositionBasedFluid {
         int m_GridCellNum;      // gird cell num ceiling to multiples of PBF_BLOCK_SIZE
         float m_WQ;             // dominator of s_corr
 
-        Particle[] m_ParticleArray;
+        Particle[] m_ParticleArray;                 // 模拟的粒子 包括刚体粒子
+        RigidbodyData[] m_Rigidbodys;               // 刚体总体信息
+        RigidbodyParticle[] m_RigidbodyParticles;   // 刚体粒子
 
         int m_SortKernel;       // CompareAndExchange in sort CS
         int m_UpdateKernel;     // Update in PBF CS
@@ -40,6 +44,8 @@ namespace PositionBasedFluid {
         ComputeBuffer m_GridParticlePair_A;     // int2[grid idx, particle idx]
         ComputeBuffer m_GridParticlePair_B;
         ComputeBuffer m_GridBuffer;             // int2[start idx, end idx]
+        ComputeBuffer m_RigidbodyDataBuffer;    // 刚体总体信息
+        ComputeBuffer m_RigidbodyParticleBuffer;    // 刚体粒子信息
 
         ComputeBuffer m_SortedGridParticlePair;
 
@@ -78,15 +84,22 @@ namespace PositionBasedFluid {
         public ComputeShader m_PBFCS;
         public ComputeShader m_SortCS;
 
-
+        public RigidbodyManager m_RigidbodyManager;
 
         void Start() {
+            // 首先初始化RigidbodyManager
+            if (m_RigidbodyManager != null) {
+                m_RigidbodyManager.Init();
+                m_RigidbodyManager.GetRigbodyParticleArray(out m_Rigidbodys, out m_RigidbodyParticles);
+            }
+
             InitPrivateVars();
             InitComputeBuffer();
             InitComputeShader();
             InitParticles();
 
             Debug.Log(1.0f / m_WQ);
+            Debug.Log(0.0f * float.MaxValue * 2.0f);
         }
 
         void Update() {
@@ -152,6 +165,9 @@ namespace PositionBasedFluid {
                 Mathf.CeilToInt(m_Border.GetZAxis() / m_GridH));
             m_GridCellNum = Mathf.CeilToInt(m_GridDim.x * m_GridDim.y * m_GridDim.z / (float)PBF_BLOCK_SIZE) * PBF_BLOCK_SIZE;
             m_WQ = m_Poly6Coeff * Mathf.Pow(H * H - Q_MAG * Q_MAG * H * H, 3);
+
+            m_RigbodyNum = (m_Rigidbodys == null) ? 0 : m_Rigidbodys.Length;
+            m_RigbodyParticleNum = (m_RigidbodyParticles == null) ? 0 : m_RigidbodyParticles.Length;
         }
 
         void InitComputeBuffer() {
@@ -160,6 +176,21 @@ namespace PositionBasedFluid {
             m_GridParticlePair_A = new ComputeBuffer(m_ParticleNum, Marshal.SizeOf(typeof(Vector2Int)));
             m_GridParticlePair_B = new ComputeBuffer(m_ParticleNum, Marshal.SizeOf(typeof(Vector2Int)));
             m_GridBuffer = new ComputeBuffer(m_GridCellNum, Marshal.SizeOf(typeof(Vector2Int)));
+        
+            if (m_RigbodyNum != 0) {
+                m_RigidbodyDataBuffer = new ComputeBuffer(m_RigbodyNum, Marshal.SizeOf(typeof(RigidbodyData)));
+                m_RigidbodyDataBuffer.SetData(m_Rigidbodys);
+            }
+            else {
+                m_RigidbodyDataBuffer = new ComputeBuffer(1, Marshal.SizeOf(typeof(RigidbodyData)));
+            }
+            if (m_RigbodyParticleNum != 0) {
+                m_RigidbodyParticleBuffer = new ComputeBuffer(m_RigbodyParticleNum, Marshal.SizeOf(typeof(RigidbodyParticle)));
+                m_RigidbodyParticleBuffer.SetData(m_RigidbodyParticles);
+            }
+            else {
+                m_RigidbodyParticleBuffer = new ComputeBuffer(1, Marshal.SizeOf(typeof(RigidbodyParticle)));
+            }
         }
 
         void DestroyComputeBuffer() {
@@ -182,6 +213,14 @@ namespace PositionBasedFluid {
             if (m_GridBuffer != null) {
                 m_GridBuffer.Release();
                 m_GridBuffer = null;
+            }
+            if (m_RigidbodyDataBuffer != null) {
+                m_RigidbodyDataBuffer.Release();
+                m_RigidbodyDataBuffer = null;
+            }
+            if (m_RigidbodyParticleBuffer != null) {
+                m_RigidbodyParticleBuffer.Release();
+                m_RigidbodyParticleBuffer = null;
             }
         }
 
@@ -224,18 +263,29 @@ namespace PositionBasedFluid {
 
         void InitParticles() {
             m_ParticleArray = new Particle[m_ParticleNum];
-            AABB waterDomain = new AABB(m_BorderMin + 0.1f * m_Border.GetRange(), m_BorderMax - 0.1f * m_Border.GetRange());
-            // AABB waterDomain = m_Border;
-            // part particles with mass 2
-            for (int i = 0; i < m_ParticleNum / 4; ++i) {
-                Vector3 pos = new Vector3(
-                    waterDomain.minPos.x + Random.value * waterDomain.GetRange().x,
-                    waterDomain.minPos.y + Random.value * waterDomain.GetRange().y,
-                    waterDomain.minPos.z + Random.value * waterDomain.GetRange().z);
-                m_ParticleArray[i] = new Particle(pos, m_Gravity, 1);
+            int fluidParticleStartIdx = 0;
+
+            // 先初始化刚体粒子
+            if (m_RigbodyParticleNum < m_ParticleNum) {
+                fluidParticleStartIdx = m_RigbodyParticleNum;
+                for (int i = 0; i < m_RigbodyParticleNum; ++i) {
+                    //m_ParticleArray[i] = new Particle(
+                    //    m_RigidbodyParticles[i].posWorld,
+                    //    m_Gravity,
+                    //    m_Rigidbodys[m_RigidbodyParticles[i].rigbodyIdx].mass,
+                    //    i);
+                    m_ParticleArray[i] = new Particle(
+                        m_RigidbodyParticles[i].posWorld,
+                        m_Gravity,
+                        float.MaxValue,
+                        i);
+                }
             }
-            // another half particles with mass 1
-            for (int i = m_ParticleNum / 4; i < m_ParticleNum; ++i) {
+
+            // 再初始化流体粒子
+            AABB waterDomain = new AABB(m_BorderMin + 0.1f * m_Border.GetRange(), m_BorderMax - 0.1f * m_Border.GetRange());
+            // part particles with mass 2
+            for (int i = fluidParticleStartIdx; i < m_ParticleNum; ++i) {
                 Vector3 pos = new Vector3(
                     waterDomain.minPos.x + Random.value * waterDomain.GetRange().x,
                     waterDomain.minPos.y + Random.value * waterDomain.GetRange().y,

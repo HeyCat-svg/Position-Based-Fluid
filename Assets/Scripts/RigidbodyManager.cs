@@ -19,7 +19,7 @@ namespace PositionBasedFluid {
             // 刚体的整个初始化顺序 MeshVoxel->MyRigidbody->RigidbodyManager
             int bodyNum = m_Rigidbodys.Length;
             for (int i = 0; i < bodyNum; ++i) {
-                m_Rigidbodys[i].Init();
+                m_Rigidbodys[i].Init(i);
             }
         }
 
@@ -37,7 +37,9 @@ namespace PositionBasedFluid {
                 bodyList.Add(new RigidbodyData(
                     startIdx, 
                     startIdx + particleNum - 1, 
-                    m_Rigidbodys[i].transform.localToWorldMatrix));
+                    m_Rigidbodys[i].transform.localToWorldMatrix,
+                    m_Rigidbodys[i].GetBarycenter(),
+                    m_Rigidbodys[i].GetMass()));
                 // 构造刚体粒子数据
                 particleList.AddRange(_particles);
                 // startIdx后移

@@ -26,6 +26,23 @@ struct Particle {
     float lambda;
     float mass;
     float invMass;
+    int rigbodyParticleIdx;
+};
+
+struct RigbodyData {
+    int2 particleIdxRange;
+    float4x4 local2world;
+    float3 barycenter;
+    float mass;
+};
+
+struct RigbodyParticle {
+    float3 rLocal;
+    float3 rWorld;
+    float3 posWorld;
+    float3 distGrad;
+    float distance;
+    int rigbodyIdx;
 };
 
 int _ParticleNum;
@@ -47,6 +64,8 @@ float _EpsilonLambda;
 float _EpsilonVorticity;
 float _CViscosity;
 
+RWStructuredBuffer<RigbodyData> _RigbodyData;
+RWStructuredBuffer<RigbodyParticle> _RigbodyParticles;
 RWStructuredBuffer<Particle> _ParticleBufferUnsorted;
 RWStructuredBuffer<Particle> _ParticleBufferSorted;
 RWStructuredBuffer<int2> _GridParticlePair;

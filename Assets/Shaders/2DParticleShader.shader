@@ -33,6 +33,7 @@
 					float lambda;
 					float mass;
 					float invMass;
+					int rigbodyParticleIdx;
 				};
 				StructuredBuffer<Particle> _Particles;
 				StructuredBuffer<Particle> _SortedParticles;

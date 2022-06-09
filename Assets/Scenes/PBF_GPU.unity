@@ -132,6 +132,7 @@ GameObject:
   - component: {fileID: 13276657}
   - component: {fileID: 13276658}
   - component: {fileID: 13276659}
+  - component: {fileID: 13276660}
   m_Layer: 0
   m_Name: PBF_GPU
   m_TagString: Untagged
@@ -182,6 +183,7 @@ MonoBehaviour:
   C_VISCOSITY: 0.01
   m_PBFCS: {fileID: 7200000, guid: 915dd794f3b9f5d4c803ed63695b8f0d, type: 3}
   m_SortCS: {fileID: 7200000, guid: d307221397f84384da260c5eec01a319, type: 3}
+  m_RigidbodyManager: {fileID: 13276660}
 --- !u!114 &13276659
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -196,6 +198,19 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_Simulator: {fileID: 13276658}
   m_ParticleRenderMat: {fileID: 2100000, guid: 965a4a57a0b7ef947a3248a2426e84d6, type: 2}
+--- !u!114 &13276660
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 13276656}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e768f405a9ddf264f9cf35028fd58d6a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_Rigidbodys: []
 --- !u!1 &705507993
 GameObject:
   m_ObjectHideFlags: 0
