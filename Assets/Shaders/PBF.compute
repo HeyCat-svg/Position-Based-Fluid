@@ -197,6 +197,10 @@ void ReorderParticleBuffer(uint3 id : SV_DispatchThreadID) {
 void ComputeLambda(uint3 id : SV_DispatchThreadID) {
     const uint idx = id.x;
     
+    if (_ParticleBufferSorted[idx].rigbodyParticleIdx != -1) {
+        return;
+    }
+    
     float densityConstrain = 0;
     float lambdaDominator = 0;
     float3 gradient = float3(0, 0, 0);
@@ -235,37 +239,59 @@ void ComputeLambda(uint3 id : SV_DispatchThreadID) {
 void ComputeDeltaPAndCollision(uint3 id : SV_DispatchThreadID) {
     const uint idx = id.x;
     
-    int3 gridCoord = _ParticleBufferSorted[idx].gridCoord;
-    float lambda = _ParticleBufferSorted[idx].lambda;
+    Particle curParticle = _ParticleBufferSorted[idx];
+    int3 gridCoord = curParticle.gridCoord;
+    float lambda = curParticle.lambda;
     float3 deltaP = float3(0, 0, 0);
-    for (int i = gridCoord.x - 1; i <= gridCoord.x + 1; ++i) {
-        for (int j = gridCoord.y - 1; j <= gridCoord.y + 1; ++j) {
-            for (int k = gridCoord.z - 1; k <= gridCoord.z + 1; ++k) {
-                int gridIdx = -1;
-                if (GridCoord2GridIdx(int3(i, j, k), gridIdx)) {
-                    int startParticleIdx = _GridBuffer[gridIdx].x;
-                    int endParticleIdx = _GridBuffer[gridIdx].y;
-                    if (startParticleIdx == -1 || endParticleIdx == -1) {
-                        continue;
-                    }
-                    for (int pIdx = startParticleIdx; pIdx <= endParticleIdx; ++pIdx) {
-                        float3 pij = _ParticleBufferSorted[idx].newPos - _ParticleBufferSorted[pIdx].newPos;
-                        float l = length(pij);
-                        if (l < _H) {
-                            float3 grad = _ParticleBufferSorted[pIdx].mass * SpikyGradient(pij, _H);
-                            deltaP += (lambda + _ParticleBufferSorted[pIdx].lambda + Scorr(Poly6(l, _H))) * grad;
+    
+    // fluid
+    if (curParticle.rigbodyParticleIdx == -1) {
+        for (int i = gridCoord.x - 1; i <= gridCoord.x + 1; ++i) {
+            for (int j = gridCoord.y - 1; j <= gridCoord.y + 1; ++j) {
+                for (int k = gridCoord.z - 1; k <= gridCoord.z + 1; ++k) {
+                    int gridIdx = -1;
+                    if (GridCoord2GridIdx(int3(i, j, k), gridIdx)) {
+                        int startParticleIdx = _GridBuffer[gridIdx].x;
+                        int endParticleIdx = _GridBuffer[gridIdx].y;
+                        if (startParticleIdx == -1 || endParticleIdx == -1) {
+                            continue;
+                        }
+                        for (int pIdx = startParticleIdx; pIdx <= endParticleIdx; ++pIdx) {
+                            float3 pij = curParticle.newPos - _ParticleBufferSorted[pIdx].newPos;
+                            float l = length(pij);
+                            if (l < _H) {
+                                Particle neighborParticle = _ParticleBufferSorted[pIdx];
+                                // fluid-fluid
+                                if (neighborParticle.rigbodyParticleIdx == -1) {
+                                    float3 grad = neighborParticle.mass * SpikyGradient(pij, _H);
+                                    deltaP += (lambda + neighborParticle.lambda + Scorr(Poly6(l, _H))) * grad;
+                                }
+                                // fluid-solid
+                                else {
+                                    int rigbodyParticleIdx = neighborParticle.rigbodyParticleIdx;
+                                    // 乘上_RestDensity是为了与最后的除以_RestDensity抵消
+                                    deltaP += _RestDensity * curParticle.invMass / (curParticle.invMass + neighborParticle.invMass) *
+                                        _RigbodyParticles[rigbodyParticleIdx].distance *
+                                        mul(_RigbodyData[_RigbodyParticles[rigbodyParticleIdx].rigbodyIdx].local2world,
+                                        float4(_RigbodyParticles[rigbodyParticleIdx].distGrad, 0)).xyz;
+                                }
+                            }
                         }
                     }
                 }
             }
         }
     }
+    // solid
+    else {
+        
+    }
     deltaP /= _RestDensity;
     
     // collision with border
-    float3 pos = BorderClamp(_ParticleBufferSorted[idx].newPos + deltaP);
+    float3 pos = BorderClamp(curParticle.newPos + deltaP);
     
-    _ParticleBufferSorted[idx].deltaP = pos - _ParticleBufferSorted[idx].newPos;
+    _ParticleBufferSorted[idx].deltaP = pos - curParticle.newPos;
 }
 
 
