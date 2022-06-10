@@ -166,20 +166,20 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 378a9edf249e8fd42892214053f76733, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_Mode: 3
+  m_Mode: 2
   m_BorderMin: {x: 0, y: 0, z: 0}
   m_BorderMax: {x: 70, y: 70, z: 70}
   showGrid: 0
   m_Gravity: {x: 0, y: -9.8, z: 0}
   m_dt: 0.016
-  m_IterNum: 8
+  m_IterNum: 6
   REST_DENSITY: 0.1
   H: 3.5
   K: 0.1
   N: 4
   Q_MAG: 0.3
   EPSILON_LAMBDA: 500
-  EPSILON_VORTICITY: 10
+  EPSILON_VORTICITY: 5
   C_VISCOSITY: 0.01
   m_PBFCS: {fileID: 7200000, guid: 915dd794f3b9f5d4c803ed63695b8f0d, type: 3}
   m_SortCS: {fileID: 7200000, guid: d307221397f84384da260c5eec01a319, type: 3}
@@ -210,7 +210,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e768f405a9ddf264f9cf35028fd58d6a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_Rigidbodys: []
+  m_Rigidbodys:
+  - {fileID: 1508321519}
 --- !u!1 &705507993
 GameObject:
   m_ObjectHideFlags: 0
@@ -395,14 +396,17 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1508321518}
+  - component: {fileID: 1508321519}
   - component: {fileID: 1508321517}
+  - component: {fileID: 1508321521}
+  - component: {fileID: 1508321520}
   m_Layer: 0
-  m_Name: Voxel
+  m_Name: Bunny
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &1508321517
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -416,9 +420,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Mesh: {fileID: -2432090755550338912, guid: 412800a085ec0ea469373b72c7a33709, type: 3}
-  m_VoxelH: 0.25
+  m_VoxelH: 2
   m_VoxelRenderMat: {fileID: 2100000, guid: 9c528104c73d9f0438cacf525e8cceaf, type: 2}
-  showVoxels: 1
+  m_UniformScale: 10
+  showVoxels: 0
+  debug: 0
 --- !u!4 &1508321518
 Transform:
   m_ObjectHideFlags: 0
@@ -427,12 +433,72 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1508321516}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: 35, y: 0.1, z: 35}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 0}
   m_RootOrder: 4
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1508321519
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1508321516}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: de9b33b5996516f40b98e98aac522228, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_Mass: 1
+--- !u!23 &1508321520
+MeshRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1508321516}
+  m_Enabled: 0
+  m_CastShadows: 1
+  m_ReceiveShadows: 1
+  m_DynamicOccludee: 1
+  m_MotionVectors: 1
+  m_LightProbeUsage: 1
+  m_ReflectionProbeUsage: 1
+  m_RayTracingMode: 2
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: -3033667219593020291, guid: 412800a085ec0ea469373b72c7a33709, type: 3}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 3
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: 0
+--- !u!33 &1508321521
+MeshFilter:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1508321516}
+  m_Mesh: {fileID: -2432090755550338912, guid: 412800a085ec0ea469373b72c7a33709, type: 3}
 --- !u!1 &1990868553
 GameObject:
   m_ObjectHideFlags: 0

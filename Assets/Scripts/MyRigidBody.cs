@@ -53,7 +53,7 @@ namespace PositionBasedFluid {
                         voxels[i].position - m_Barycenter,
                         transform.TransformPoint(voxels[i].position),
                         voxels[i].distGrad,
-                        voxels[i].distance,
+                        Mathf.Abs(voxels[i].distance),
                         rigbodyIdx);
                     curParticleIdx++;
                 }

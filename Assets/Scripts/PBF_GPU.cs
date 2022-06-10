@@ -369,6 +369,8 @@ namespace PositionBasedFluid {
                 // compute deltaP and deal with collision
                 m_PBFCS.SetBuffer(m_ComputeDeltaPAndCollisionKernel, "_ParticleBufferSorted", m_ParticleBuffer_B);
                 m_PBFCS.SetBuffer(m_ComputeDeltaPAndCollisionKernel, "_GridBuffer", m_GridBuffer);
+                m_PBFCS.SetBuffer(m_ComputeDeltaPAndCollisionKernel, "_RigbodyParticles", m_RigidbodyParticleBuffer);
+                m_PBFCS.SetBuffer(m_ComputeDeltaPAndCollisionKernel, "_RigbodyData", m_RigidbodyDataBuffer);
                 m_PBFCS.Dispatch(m_ComputeDeltaPAndCollisionKernel, m_ParticleNum / PBF_BLOCK_SIZE, 1, 1);
 
                 // update position

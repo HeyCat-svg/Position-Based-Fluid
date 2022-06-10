@@ -56,8 +56,9 @@
 					int gridIdx = gridCoord.x + gridCoord.y * _GridDim.x + gridCoord.z * _GridDim.x * _GridDim.y;
 					float c = (float)(id - _GridBuffer[gridIdx].x) / (_GridBuffer[gridIdx].y - _GridBuffer[gridIdx].x);
 					output.col = float4(c.xxx, 1);*/
-					output.col = (_Particles[id].mass > 1) ? float4(1, 0, 0, 1) : float4(1, 1, 1, 1);
+					// output.col = (_Particles[id].mass > 1) ? float4(1, 0, 0, 1) : float4(1, 1, 1, 1);
 					// output.col = float4(0.7 + 0.3 *_Particles[id].velocity, 0.7,1);
+					output.col = (_Particles[id].rigbodyParticleIdx != -1) ? float4(1, 0, 0, 1) : float4(1, 1, 1, 1);
 					return output;
 				}
 

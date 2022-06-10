@@ -231,7 +231,7 @@ void ComputeLambda(uint3 id : SV_DispatchThreadID) {
     }
     densityConstrain = densityConstrain / _RestDensity - 1.0;
     lambdaDominator += (_ParticleBufferSorted[idx].invMass * dot(gradient, gradient) + _EpsilonLambda);
-    _ParticleBufferSorted[idx].lambda = -densityConstrain / lambdaDominator;
+    _ParticleBufferSorted[idx].lambda = -_ParticleBufferSorted[idx].invMass * densityConstrain / lambdaDominator;
 }
 
 
@@ -257,6 +257,9 @@ void ComputeDeltaPAndCollision(uint3 id : SV_DispatchThreadID) {
                             continue;
                         }
                         for (int pIdx = startParticleIdx; pIdx <= endParticleIdx; ++pIdx) {
+                            if ((int)idx == pIdx) {
+                                continue;
+                            }
                             float3 pij = curParticle.newPos - _ParticleBufferSorted[pIdx].newPos;
                             float l = length(pij);
                             if (l < _H) {
@@ -270,7 +273,7 @@ void ComputeDeltaPAndCollision(uint3 id : SV_DispatchThreadID) {
                                 else {
                                     int rigbodyParticleIdx = neighborParticle.rigbodyParticleIdx;
                                     // 乘上_RestDensity是为了与最后的除以_RestDensity抵消
-                                    deltaP += _RestDensity * curParticle.invMass / (curParticle.invMass + neighborParticle.invMass) *
+                                    deltaP += 0.001 * _RestDensity * curParticle.invMass / (curParticle.invMass + neighborParticle.invMass + 1e-3) *
                                         _RigbodyParticles[rigbodyParticleIdx].distance *
                                         mul(_RigbodyData[_RigbodyParticles[rigbodyParticleIdx].rigbodyIdx].local2world,
                                         float4(_RigbodyParticles[rigbodyParticleIdx].distGrad, 0)).xyz;
@@ -284,7 +287,58 @@ void ComputeDeltaPAndCollision(uint3 id : SV_DispatchThreadID) {
     }
     // solid
     else {
-        
+        for (int i = gridCoord.x - 1; i <= gridCoord.x + 1; ++i) {
+            for (int j = gridCoord.y - 1; j <= gridCoord.y + 1; ++j) {
+                for (int k = gridCoord.z - 1; k <= gridCoord.z + 1; ++k) {
+                    int gridIdx = -1;
+                    if (GridCoord2GridIdx(int3(i, j, k), gridIdx)) {
+                        int startParticleIdx = _GridBuffer[gridIdx].x;
+                        int endParticleIdx = _GridBuffer[gridIdx].y;
+                        if (startParticleIdx == -1 || endParticleIdx == -1) {
+                            continue;
+                        }
+                        for (int pIdx = startParticleIdx; pIdx <= endParticleIdx; ++pIdx) {
+                            if ((int)idx == pIdx) {
+                                continue;
+                            }
+                            float3 pij = curParticle.newPos - _ParticleBufferSorted[pIdx].newPos;
+                            float l = length(pij);
+                            if (l < _H) {
+                                Particle neighborParticle = _ParticleBufferSorted[pIdx];
+                                // solid-fluid
+                                if (neighborParticle.rigbodyParticleIdx == -1) {
+                                    int rigbodyParticleIdx = curParticle.rigbodyParticleIdx;
+                                    // 乘上_RestDensity是为了与最后的除以_RestDensity抵消
+                                    deltaP -= 0.001 * _RestDensity * curParticle.invMass / (curParticle.invMass + neighborParticle.invMass + 1e-3) *
+                                        _RigbodyParticles[rigbodyParticleIdx].distance *
+                                        mul(_RigbodyData[_RigbodyParticles[rigbodyParticleIdx].rigbodyIdx].local2world,
+                                        float4(_RigbodyParticles[rigbodyParticleIdx].distGrad, 0)).xyz;
+                                }
+                                // solid-solid
+                                else {
+                                    float di = _RigbodyParticles[curParticle.rigbodyParticleIdx].distance;
+                                    float dj = _RigbodyParticles[neighborParticle.rigbodyParticleIdx].distance;
+                                    float d = 0;
+                                    float3 n = float3(0, 0, 0);
+                                    if (di < dj) {
+                                        d = di;
+                                        n = mul(_RigbodyData[_RigbodyParticles[curParticle.rigbodyParticleIdx].rigbodyIdx].local2world,
+                                            float4(_RigbodyParticles[curParticle.rigbodyParticleIdx].distGrad, 0)).xyz;
+                                    }
+                                    else {
+                                        d = dj;
+                                        n = -mul(_RigbodyData[_RigbodyParticles[neighborParticle.rigbodyParticleIdx].rigbodyIdx].local2world,
+                                            float4(_RigbodyParticles[neighborParticle.rigbodyParticleIdx].distGrad, 0)).xyz;
+                                    }
+                                    // 乘上_RestDensity是为了与最后的除以_RestDensity抵消
+                                    deltaP -= 0.001 * _RestDensity * curParticle.invMass / (curParticle.invMass + neighborParticle.invMass + 1e-3) * d * n;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     deltaP /= _RestDensity;
     
@@ -312,6 +366,9 @@ void UpdateVel(uint3 id : SV_DispatchThreadID) {
 [numthreads(PBF_BLOCK_SIZE, 1, 1)]
 void ComputeVorticityAndDeltaV(uint3 id : SV_DispatchThreadID) {
     const int idx = id.x;
+    if (_ParticleBufferSorted[idx].rigbodyParticleIdx != -1) {
+        return;
+    }
     
     int3 gridCoord = _ParticleBufferSorted[idx].gridCoord;
     float3 vorticity = float3(0, 0, 0);
@@ -327,6 +384,9 @@ void ComputeVorticityAndDeltaV(uint3 id : SV_DispatchThreadID) {
                         continue;
                     }
                     for (int pIdx = startParticleIdx; pIdx <= endParticleIdx; ++pIdx) {
+                        if (_ParticleBufferSorted[pIdx].rigbodyParticleIdx != -1 || idx == pIdx) {
+                            continue;
+                        }
                         float3 pij = _ParticleBufferSorted[idx].newPos - _ParticleBufferSorted[pIdx].newPos;
                         float l = length(pij);
                         if (l < _H) {
@@ -348,6 +408,12 @@ void ComputeVorticityAndDeltaV(uint3 id : SV_DispatchThreadID) {
 [numthreads(PBF_BLOCK_SIZE, 1, 1)]
 void ApplyForceAndUpdatePV(uint3 id : SV_DispatchThreadID) {
     const uint idx = id.x;
+    if (_ParticleBufferSorted[idx].rigbodyParticleIdx != -1) {
+        _ParticleBufferSorted[idx].force = _ParticleBufferSorted[idx].invMass * _ParticleBufferSorted[idx].mass * _Gravity;
+        // _ParticleBufferSorted[idx].force = float3(0, 0, 0);
+        _ParticleBufferSorted[idx].oldPos = _ParticleBufferSorted[idx].newPos;
+        return;
+    }
     
     int3 gridCoord = _ParticleBufferSorted[idx].gridCoord;
     float maxVorticityMag = 0;
@@ -363,6 +429,9 @@ void ApplyForceAndUpdatePV(uint3 id : SV_DispatchThreadID) {
                         continue;
                     }
                     for (int pIdx = startParticleIdx; pIdx <= endParticleIdx; ++pIdx) {
+                        if (_ParticleBufferSorted[pIdx].rigbodyParticleIdx != -1) {
+                            continue;
+                        }
                         float3 pij = _ParticleBufferSorted[idx].newPos - _ParticleBufferSorted[pIdx].newPos;
                         float l = length(pij);
                         if (l < _H) {

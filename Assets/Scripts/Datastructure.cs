@@ -171,16 +171,17 @@ namespace PositionBasedFluid.DataStructure {
 
         public Particle(Vector3 pos, Vector3 gravity, float mass, int _rigbodyParticleIdx = -1) {
             this.oldPos = pos;
-            this.newPos = Vector3.zero;
+            this.newPos = pos;
             this.deltaP = Vector3.zero;
-            this.velocity = new Vector3(10, 0, 0);
+            this.velocity = new Vector3(0, 0, 0);
             this.deltaV = Vector3.zero;
-            this.force = gravity;
+            this.force = Vector3.zero;
             this.vorticity = Vector3.zero;
             this.gridCoord = new Vector3Int(-1, -1, -1);
             this.lambda = 0;
             this.mass = mass;
             if (mass == float.MaxValue) {
+                this.mass = 1;            // 给一个相对来说比较大的值
                 this.invMass = 0;
             }
             else {
