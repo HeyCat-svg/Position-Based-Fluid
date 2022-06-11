@@ -166,7 +166,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 378a9edf249e8fd42892214053f76733, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_Mode: 2
+  m_Mode: 3
   m_BorderMin: {x: 0, y: 0, z: 0}
   m_BorderMax: {x: 70, y: 70, z: 70}
   showGrid: 0
@@ -179,7 +179,7 @@ MonoBehaviour:
   N: 4
   Q_MAG: 0.3
   EPSILON_LAMBDA: 500
-  EPSILON_VORTICITY: 5
+  EPSILON_VORTICITY: 10
   C_VISCOSITY: 0.01
   m_PBFCS: {fileID: 7200000, guid: 915dd794f3b9f5d4c803ed63695b8f0d, type: 3}
   m_SortCS: {fileID: 7200000, guid: d307221397f84384da260c5eec01a319, type: 3}
@@ -420,11 +420,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Mesh: {fileID: -2432090755550338912, guid: 412800a085ec0ea469373b72c7a33709, type: 3}
-  m_VoxelH: 2
+  m_VoxelH: 2.5
   m_VoxelRenderMat: {fileID: 2100000, guid: 9c528104c73d9f0438cacf525e8cceaf, type: 2}
   m_UniformScale: 10
   showVoxels: 0
-  debug: 0
+  showGradient: 1
 --- !u!4 &1508321518
 Transform:
   m_ObjectHideFlags: 0
@@ -433,7 +433,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1508321516}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 35, y: 0.1, z: 35}
+  m_LocalPosition: {x: 35, y: 5, z: 35}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 0}
