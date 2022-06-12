@@ -194,9 +194,11 @@ namespace PositionBasedFluid.DataStructure {
     public struct RigidbodyParticle {
         public Vector3 rLocal;              // 局部空间重心到粒子的位移
         public Vector3 rWorld;              // 世界空间重心到粒子的位移
-        public Vector3 posWorld;            // 刚体粒子的初始世界位置
-        public Vector3 distGrad;            // 距离场梯度
-        public float distance;              // 有向距离 内部是负的
+        public Vector3 posWorld;            // 刚体粒子的世界位置
+        public Vector3 distGrad;            // 距离场梯度 
+        public Vector3 barycenterSum;       // 重心求和的中间变量
+        public Matrix4x4 ASum;              // 协方差矩阵求和的中间变量
+        public float distance;              // 有向距离 经过abs转成正的
         public int rigbodyIdx;              // 指向刚体整体信息
         
         public RigidbodyParticle(Vector3 _rLocal, Vector3 _posWorld, Vector3 _distGrad, float _distance, int _rigbodyIdx) {
@@ -204,6 +206,8 @@ namespace PositionBasedFluid.DataStructure {
             rWorld = _rLocal;
             posWorld = _posWorld;
             distGrad = _distGrad;
+            barycenterSum = Vector3.zero;
+            ASum = Matrix4x4.zero;
             distance = _distance;
             rigbodyIdx = _rigbodyIdx;
         }
@@ -213,13 +217,17 @@ namespace PositionBasedFluid.DataStructure {
         public Vector2Int particleIdxRange;     // [startIdx, endIdx]两端闭的
         public Matrix4x4 local2world;           // mesh 空间到世界坐标
         public Vector3 barycenter;              // 局部重心坐标
+        public Vector3 worldBaryCenter;         // 世界重心坐标
         public float mass;                      // 每个粒子的质量
+        public int sumBorder;                   // 刚体粒子属性求和的idx上界
 
         public RigidbodyData(int startIdx, int endIdx, Matrix4x4 l2w, Vector3 _barycenter, float _mass) {
             particleIdxRange = new Vector2Int(startIdx, endIdx);
             local2world = l2w;
             barycenter = _barycenter;
+            worldBaryCenter = _barycenter;
             mass = _mass;
+            sumBorder = endIdx;
         }
     }
 

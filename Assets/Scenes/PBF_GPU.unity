@@ -173,13 +173,13 @@ MonoBehaviour:
   m_Gravity: {x: 0, y: -9.8, z: 0}
   m_dt: 0.016
   m_IterNum: 6
-  REST_DENSITY: 0.1
+  REST_DENSITY: 0.2
   H: 3.5
   K: 0.1
   N: 4
   Q_MAG: 0.3
   EPSILON_LAMBDA: 500
-  EPSILON_VORTICITY: 10
+  EPSILON_VORTICITY: 1
   C_VISCOSITY: 0.01
   m_PBFCS: {fileID: 7200000, guid: 915dd794f3b9f5d4c803ed63695b8f0d, type: 3}
   m_SortCS: {fileID: 7200000, guid: d307221397f84384da260c5eec01a319, type: 3}
@@ -420,11 +420,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Mesh: {fileID: -2432090755550338912, guid: 412800a085ec0ea469373b72c7a33709, type: 3}
-  m_VoxelH: 2.5
+  m_VoxelH: 3.51
   m_VoxelRenderMat: {fileID: 2100000, guid: 9c528104c73d9f0438cacf525e8cceaf, type: 2}
-  m_UniformScale: 10
+  m_UniformScale: 6
   showVoxels: 0
-  showGradient: 1
+  showGradient: 0
 --- !u!4 &1508321518
 Transform:
   m_ObjectHideFlags: 0
@@ -451,7 +451,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: de9b33b5996516f40b98e98aac522228, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_Mass: 1
+  m_Mass: 20
 --- !u!23 &1508321520
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -470,7 +470,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: -3033667219593020291, guid: 412800a085ec0ea469373b72c7a33709, type: 3}
+  - {fileID: 2100000, guid: 3b35ad321c8650f46aa80d1d5f5aa634, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0

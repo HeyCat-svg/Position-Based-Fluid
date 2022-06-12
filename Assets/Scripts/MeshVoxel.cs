@@ -147,11 +147,10 @@ namespace PositionBasedFluid {
                     m_Voxels[j].distance = (dist < m_Voxels[j].distance) ? dist : m_Voxels[j].distance; 
                 }
             }
-            // 距离变成有向距离 同时应用放缩scale（不需要scale？因为grad在local2world时被放缩过了）
+            // 距离变成有向距离
             for (int i = 0; i < m_VoxelNum; ++i) {
                 m_Voxels[i].distance = (m_Voxels[i].isInner < 1e-3) ?
                     Mathf.Abs(m_Voxels[i].distance) : -Mathf.Abs(m_Voxels[i].distance);
-                // m_Voxels[i].distance *= m_UniformScale;
             }
             //// 计算有向距离场梯度
             //for (int i = 0; i < m_VoxelNum; ++i) {
@@ -198,6 +197,10 @@ namespace PositionBasedFluid {
 
         public Voxel[] GetVoxels() {
             return m_Voxels;
+        }
+
+        public float GetUniformScale() {
+            return m_UniformScale;
         }
     }
 }

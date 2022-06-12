@@ -45,6 +45,13 @@
 					float4 pos : SV_POSITION;
 					float2 tex : TEXCOORD0;
 					float4 col : COLOR;
+					float isRigbody : TEXCOORD1;
+				};
+
+				struct g2f {
+					float4 pos : SV_POSITION;
+					float2 tex : TEXCOORD0;
+					float4 col : COLOR;
 				};
 
 				v2g vert(uint id : SV_VertexID) {
@@ -59,12 +66,13 @@
 					// output.col = (_Particles[id].mass > 1) ? float4(1, 0, 0, 1) : float4(1, 1, 1, 1);
 					// output.col = float4(0.7 + 0.3 *_Particles[id].velocity, 0.7,1);
 					output.col = (_Particles[id].rigbodyParticleIdx != -1) ? float4(1, 0, 0, 1) : float4(1, 1, 1, 1);
+					output.isRigbody = (_Particles[id].rigbodyParticleIdx != -1) ? 1 : 0;
 					return output;
 				}
 
 				[maxvertexcount(4)]
-				void geom(point v2g input[1], inout TriangleStream<v2g> outStream) {
-					v2g output;
+				void geom(point v2g input[1], inout TriangleStream<g2f> outStream) {
+					g2f output;
 
 					float4 pos = input[0].pos;
 					float4 col = input[0].col;
@@ -81,7 +89,8 @@
 							float2 tex = float2(x, y);
 							output.tex = tex;
 
-							output.pos = pos + mul(billboardMatrix, float4((tex * 2 - float2(1, 1)) * _ParticleRad, 0, 0));
+							float r = (input[0].isRigbody > 1e-3) ? _ParticleRad * 5 : _ParticleRad;
+							output.pos = pos + mul(billboardMatrix, float4((tex * 2 - float2(1, 1)) * r, 0, 0));
 							// output.pos = pos + mul(float4((tex * 2 - float2(1, 1)) * _ParticleRad, 0, 1), billboardMatrix);
 							output.pos = mul(UNITY_MATRIX_VP, output.pos);
 
@@ -94,7 +103,7 @@
 					outStream.RestartStrip();
 				}
 
-				fixed4 frag(v2g i) : COLOR{
+				fixed4 frag(g2f i) : COLOR{
 					float4 col = tex2D(_MainTex, i.tex) * i.col;
 					if (col.a < 0.3) discard;
 					return fixed4(col.xyz, 1);

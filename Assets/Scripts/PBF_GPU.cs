@@ -38,6 +38,14 @@ namespace PositionBasedFluid {
         int m_UpdateVelKernel;
         int m_ComputeVorticityAndDeltaVKernel;
         int m_ApplyForceAndUpdatePVKernel;
+        int m_InitRigbodySumBorderKernel;
+        int m_AddBarycenterKernel;
+        int m_UpdateRigbodySumBorderKernel;
+        int m_ComputeBarycenterKernel;
+        int m_UpdateRWorldAndComputeMatAKernel;
+        int m_AddMatAKernel;
+        int m_ComputeRotationAndLocal2WorldMatKernel;
+        int m_UpdateRigbodyParticlePosKernel;
 
         ComputeBuffer m_ParticleBuffer_A;       // need to rearrange particle seq from a buffer to another
         ComputeBuffer m_ParticleBuffer_B;
@@ -237,6 +245,14 @@ namespace PositionBasedFluid {
             m_UpdateVelKernel = m_PBFCS.FindKernel("UpdateVel");
             m_ComputeVorticityAndDeltaVKernel = m_PBFCS.FindKernel("ComputeVorticityAndDeltaV");
             m_ApplyForceAndUpdatePVKernel = m_PBFCS.FindKernel("ApplyForceAndUpdatePV");
+            m_InitRigbodySumBorderKernel = m_PBFCS.FindKernel("InitRigbodySumBorder");
+            m_AddBarycenterKernel = m_PBFCS.FindKernel("AddBarycenter");
+            m_UpdateRigbodySumBorderKernel = m_PBFCS.FindKernel("UpdateRigbodySumBorder");
+            m_ComputeBarycenterKernel = m_PBFCS.FindKernel("ComputeBarycenter");
+            m_UpdateRWorldAndComputeMatAKernel = m_PBFCS.FindKernel("UpdateRWorldAndComputeMatA");
+            m_AddMatAKernel = m_PBFCS.FindKernel("AddMatA");
+            m_ComputeRotationAndLocal2WorldMatKernel = m_PBFCS.FindKernel("ComputeRotationAndLocal2WorldMat");
+            m_UpdateRigbodyParticlePosKernel = m_PBFCS.FindKernel("UpdateRigbodyParticlePos");
 
             m_PBFCS.SetInt("_ParticleNum", m_ParticleNum);
             m_PBFCS.SetFloat("_Poly6Coeff", m_Poly6Coeff);
@@ -269,16 +285,16 @@ namespace PositionBasedFluid {
             if (m_RigbodyParticleNum < m_ParticleNum) {
                 fluidParticleStartIdx = m_RigbodyParticleNum;
                 for (int i = 0; i < m_RigbodyParticleNum; ++i) {
-                    //m_ParticleArray[i] = new Particle(
-                    //    m_RigidbodyParticles[i].posWorld,
-                    //    m_Gravity,
-                    //    m_Rigidbodys[m_RigidbodyParticles[i].rigbodyIdx].mass,
-                    //    i);
                     m_ParticleArray[i] = new Particle(
                         m_RigidbodyParticles[i].posWorld,
                         m_Gravity,
-                        float.MaxValue,
+                        m_Rigidbodys[m_RigidbodyParticles[i].rigbodyIdx].mass,
                         i);
+                    //m_ParticleArray[i] = new Particle(
+                    //    m_RigidbodyParticles[i].posWorld,
+                    //    m_Gravity,
+                    //    float.MaxValue,
+                    //    i);
                 }
             }
 
@@ -316,6 +332,63 @@ namespace PositionBasedFluid {
             }
 
             return input;       // output swap to input after the last exchange
+        }
+
+        void ShapeMatching() {
+            // compute barycenter
+            m_PBFCS.SetBuffer(m_InitRigbodySumBorderKernel, "_RigbodyData", m_RigidbodyDataBuffer);
+            m_PBFCS.Dispatch(m_InitRigbodySumBorderKernel, m_RigbodyNum, 1, 1);
+
+            int size = m_RigidbodyManager.GetRigbodyMaxParticleNum();
+            while (size != 1) {
+                int step = (size / 2 * 2 == size) ? size / 2 : (size / 2 + 1);
+                m_PBFCS.SetInt("_AddStep", step);
+                m_PBFCS.SetBuffer(m_AddBarycenterKernel, "_RigbodyData", m_RigidbodyDataBuffer);
+                m_PBFCS.SetBuffer(m_AddBarycenterKernel, "_RigbodyParticles", m_RigidbodyParticleBuffer);
+                m_PBFCS.Dispatch(m_AddBarycenterKernel, m_RigbodyNum, size / 2, 1);
+
+                m_PBFCS.SetBuffer(m_UpdateRigbodySumBorderKernel, "_RigbodyData", m_RigidbodyDataBuffer);
+                m_PBFCS.Dispatch(m_UpdateRigbodySumBorderKernel, m_RigbodyNum, 1, 1);
+
+                size = step;
+            }
+
+            m_PBFCS.SetBuffer(m_ComputeBarycenterKernel, "_RigbodyData", m_RigidbodyDataBuffer);
+            m_PBFCS.SetBuffer(m_ComputeBarycenterKernel, "_RigbodyParticles", m_RigidbodyParticleBuffer);
+            m_PBFCS.Dispatch(m_ComputeBarycenterKernel, m_RigbodyNum, 1, 1);
+
+            // compute matrix A
+            m_PBFCS.SetBuffer(m_UpdateRWorldAndComputeMatAKernel, "_RigbodyData", m_RigidbodyDataBuffer);
+            m_PBFCS.SetBuffer(m_UpdateRWorldAndComputeMatAKernel, "_RigbodyParticles", m_RigidbodyParticleBuffer);
+            m_PBFCS.Dispatch(m_UpdateRWorldAndComputeMatAKernel, m_RigbodyParticleNum, 1, 1);
+
+            m_PBFCS.SetBuffer(m_InitRigbodySumBorderKernel, "_RigbodyData", m_RigidbodyDataBuffer);
+            m_PBFCS.Dispatch(m_InitRigbodySumBorderKernel, m_RigbodyNum, 1, 1);
+
+            size = m_RigidbodyManager.GetRigbodyMaxParticleNum();
+            while (size != 1) {
+                int step = (size / 2 * 2 == size) ? size / 2 : (size / 2 + 1);
+                m_PBFCS.SetInt("_AddStep", step);
+                m_PBFCS.SetBuffer(m_AddMatAKernel, "_RigbodyData", m_RigidbodyDataBuffer);
+                m_PBFCS.SetBuffer(m_AddMatAKernel, "_RigbodyParticles", m_RigidbodyParticleBuffer);
+                m_PBFCS.Dispatch(m_AddMatAKernel, m_RigbodyNum, size / 2, 1);
+
+                m_PBFCS.SetBuffer(m_UpdateRigbodySumBorderKernel, "_RigbodyData", m_RigidbodyDataBuffer);
+                m_PBFCS.Dispatch(m_UpdateRigbodySumBorderKernel, m_RigbodyNum, 1, 1);
+
+                size = step;
+            }
+
+            // svd and compute local2world
+            m_PBFCS.SetBuffer(m_ComputeRotationAndLocal2WorldMatKernel, "_RigbodyData", m_RigidbodyDataBuffer);
+            m_PBFCS.SetBuffer(m_ComputeRotationAndLocal2WorldMatKernel, "_RigbodyParticles", m_RigidbodyParticleBuffer);
+            m_PBFCS.Dispatch(m_ComputeRotationAndLocal2WorldMatKernel, m_RigbodyNum, 1, 1);
+
+            // update rigbody position
+            m_PBFCS.SetBuffer(m_UpdateRigbodyParticlePosKernel, "_RigbodyData", m_RigidbodyDataBuffer);
+            m_PBFCS.SetBuffer(m_UpdateRigbodyParticlePosKernel, "_RigbodyParticles", m_RigidbodyParticleBuffer);
+            m_PBFCS.SetBuffer(m_UpdateRigbodyParticlePosKernel, "_ParticleBufferSorted", m_ParticleBuffer_B);
+            m_PBFCS.Dispatch(m_UpdateRigbodyParticlePosKernel, m_ParticleNum / PBF_BLOCK_SIZE, 1, 1);
         }
 
         void DebugUpdate() {
@@ -390,7 +463,13 @@ namespace PositionBasedFluid {
             // apply force and update Position Velocity
             m_PBFCS.SetBuffer(m_ApplyForceAndUpdatePVKernel, "_ParticleBufferSorted", m_ParticleBuffer_B);
             m_PBFCS.SetBuffer(m_ApplyForceAndUpdatePVKernel, "_GridBuffer", m_GridBuffer);
+            m_PBFCS.SetBuffer(m_ApplyForceAndUpdatePVKernel, "_RigbodyParticles", m_RigidbodyParticleBuffer);
             m_PBFCS.Dispatch(m_ApplyForceAndUpdatePVKernel, m_ParticleNum / PBF_BLOCK_SIZE, 1, 1);
+
+            // rigbody shape matching
+            if (m_RigbodyNum != 0) {
+                ShapeMatching();
+            }
 
             // swap buffer
             ComputeBuffer tmp = m_ParticleBuffer_A;

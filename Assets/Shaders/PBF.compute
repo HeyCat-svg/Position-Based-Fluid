@@ -9,7 +9,17 @@
 #pragma kernel UpdateVel
 #pragma kernel ComputeVorticityAndDeltaV
 #pragma kernel ApplyForceAndUpdatePV
+#pragma kernel InitRigbodySumBorder
+#pragma kernel AddBarycenter
+#pragma kernel UpdateRigbodySumBorder
+#pragma kernel ComputeBarycenter
+#pragma kernel UpdateRWorldAndComputeMatA
+#pragma kernel AddMatA
+#pragma kernel ComputeRotationAndLocal2WorldMat
+#pragma kernel UpdateRigbodyParticlePos
 #pragma kernel DebugKernel
+
+#include "Math.cginc"
 
 #define PBF_BLOCK_SIZE 512
 
@@ -33,7 +43,9 @@ struct RigbodyData {
     int2 particleIdxRange;
     float4x4 local2world;
     float3 barycenter;
+    float3 worldBarycenter;
     float mass;
+    int sumBorder;
 };
 
 struct RigbodyParticle {
@@ -41,6 +53,8 @@ struct RigbodyParticle {
     float3 rWorld;
     float3 posWorld;
     float3 distGrad;
+    float3 barycenterSum;
+    float4x4 ASum;
     float distance;
     int rigbodyIdx;
 };
@@ -273,7 +287,7 @@ void ComputeDeltaPAndCollision(uint3 id : SV_DispatchThreadID) {
                                 else {
                                     int rigbodyParticleIdx = neighborParticle.rigbodyParticleIdx;
                                     // 乘上_RestDensity是为了与最后的除以_RestDensity抵消
-                                    deltaP += 0.001 * _RestDensity * curParticle.invMass / (curParticle.invMass + neighborParticle.invMass + 1e-3) *
+                                    deltaP += 2e-4 * _RestDensity * curParticle.invMass / (curParticle.invMass + neighborParticle.invMass + 1e-3) *
                                         _RigbodyParticles[rigbodyParticleIdx].distance *
                                         mul(_RigbodyData[_RigbodyParticles[rigbodyParticleIdx].rigbodyIdx].local2world,
                                         float4(_RigbodyParticles[rigbodyParticleIdx].distGrad, 0)).xyz;
@@ -309,7 +323,7 @@ void ComputeDeltaPAndCollision(uint3 id : SV_DispatchThreadID) {
                                 if (neighborParticle.rigbodyParticleIdx == -1) {
                                     int rigbodyParticleIdx = curParticle.rigbodyParticleIdx;
                                     // 乘上_RestDensity是为了与最后的除以_RestDensity抵消
-                                    deltaP -= 0.001 * _RestDensity * curParticle.invMass / (curParticle.invMass + neighborParticle.invMass + 1e-3) *
+                                    deltaP -= 2e-4 * _RestDensity * curParticle.invMass / (curParticle.invMass + neighborParticle.invMass + 1e-3) *
                                         _RigbodyParticles[rigbodyParticleIdx].distance *
                                         mul(_RigbodyData[_RigbodyParticles[rigbodyParticleIdx].rigbodyIdx].local2world,
                                         float4(_RigbodyParticles[rigbodyParticleIdx].distGrad, 0)).xyz;
@@ -331,7 +345,7 @@ void ComputeDeltaPAndCollision(uint3 id : SV_DispatchThreadID) {
                                             float4(_RigbodyParticles[neighborParticle.rigbodyParticleIdx].distGrad, 0)).xyz;
                                     }
                                     // 乘上_RestDensity是为了与最后的除以_RestDensity抵消
-                                    deltaP -= 0.001 * _RestDensity * curParticle.invMass / (curParticle.invMass + neighborParticle.invMass + 1e-3) * d * n;
+                                    deltaP -= 2e-4 * _RestDensity * curParticle.invMass / (curParticle.invMass + neighborParticle.invMass + 1e-3) * d * n;
                                 }
                             }
                         }
@@ -409,9 +423,12 @@ void ComputeVorticityAndDeltaV(uint3 id : SV_DispatchThreadID) {
 void ApplyForceAndUpdatePV(uint3 id : SV_DispatchThreadID) {
     const uint idx = id.x;
     if (_ParticleBufferSorted[idx].rigbodyParticleIdx != -1) {
+        int rigbodyParticleIdx = _ParticleBufferSorted[idx].rigbodyParticleIdx;
         _ParticleBufferSorted[idx].force = _ParticleBufferSorted[idx].invMass * _ParticleBufferSorted[idx].mass * _Gravity;
-        // _ParticleBufferSorted[idx].force = float3(0, 0, 0);
         _ParticleBufferSorted[idx].oldPos = _ParticleBufferSorted[idx].newPos;
+        // 更新刚体粒子buffer中粒子的当前世界坐标
+        _RigbodyParticles[rigbodyParticleIdx].posWorld = _ParticleBufferSorted[idx].newPos;
+        _RigbodyParticles[rigbodyParticleIdx].barycenterSum = _ParticleBufferSorted[idx].newPos;
         return;
     }
     
@@ -452,6 +469,100 @@ void ApplyForceAndUpdatePV(uint3 id : SV_DispatchThreadID) {
     _ParticleBufferSorted[idx].oldPos = _ParticleBufferSorted[idx].newPos;
 }
 
+
+int _AddStep;       // 求和用的
+
+[numthreads(1, 1, 1)]
+void InitRigbodySumBorder(uint3 id : SV_DispatchThreadID) {
+    uint idx = id.x;
+    _RigbodyData[idx].sumBorder = _RigbodyData[idx].particleIdxRange.y;
+}
+
+[numthreads(1, 1, 1)]
+void AddBarycenter(uint3 id : SV_DispatchThreadID) {
+    uint rigbodyIdx = id.x;             // 是哪一个刚体在求和
+    uint rigbodyParticleIdx = id.y;     // 是刚体的哪一个粒子在求和
+    
+    int curPIdx = _RigbodyData[rigbodyIdx].particleIdxRange.x + rigbodyParticleIdx;
+    int targetPIdx = curPIdx + _AddStep;
+    if (targetPIdx > _RigbodyData[rigbodyIdx].sumBorder) {
+        return;
+    }
+    _RigbodyParticles[curPIdx].barycenterSum += _RigbodyParticles[targetPIdx].barycenterSum;
+}
+
+[numthreads(1, 1, 1)]
+void UpdateRigbodySumBorder(uint3 id : SV_DispatchThreadID) {
+    uint rigbodyIdx = id.x;
+    _RigbodyData[rigbodyIdx].sumBorder = min(_RigbodyData[rigbodyIdx].sumBorder, _RigbodyData[rigbodyIdx].particleIdxRange.x + _AddStep - 1);
+}
+
+[numthreads(1, 1, 1)]
+void ComputeBarycenter(uint3 id : SV_DispatchThreadID) {
+    uint rigbodyIdx = id.x;
+    _RigbodyData[rigbodyIdx].worldBarycenter = 
+        _RigbodyParticles[_RigbodyData[rigbodyIdx].particleIdxRange.x].barycenterSum / 
+        (float)(_RigbodyData[rigbodyIdx].particleIdxRange.y - _RigbodyData[rigbodyIdx].particleIdxRange.x + 1);
+}
+
+[numthreads(1, 1, 1)]
+void UpdateRWorldAndComputeMatA(uint3 id : SV_DispatchThreadID) {
+    uint rigbodyPIdx = id.x;
+    _RigbodyParticles[rigbodyPIdx].rWorld =
+        _RigbodyParticles[rigbodyPIdx].posWorld - _RigbodyData[_RigbodyParticles[rigbodyPIdx].rigbodyIdx].worldBarycenter;
+    float3 rLoc = _RigbodyParticles[rigbodyPIdx].rLocal;
+    float3 rWorld = _RigbodyParticles[rigbodyPIdx].rWorld;
+    _RigbodyParticles[rigbodyPIdx].ASum = mul(float4x1(rWorld, 0), float1x4(rLoc, 0));
+}
+
+[numthreads(1, 1, 1)]
+void AddMatA(uint3 id : SV_DispatchThreadID) {
+    uint rigbodyIdx = id.x; // 是哪一个刚体在求和
+    uint rigbodyParticleIdx = id.y; // 是刚体的哪一个粒子在求和
+    
+    int curPIdx = _RigbodyData[rigbodyIdx].particleIdxRange.x + rigbodyParticleIdx;
+    int targetPIdx = curPIdx + _AddStep;
+    if (targetPIdx > _RigbodyData[rigbodyIdx].sumBorder) {
+        return;
+    }
+    _RigbodyParticles[curPIdx].ASum += _RigbodyParticles[targetPIdx].ASum;
+}
+
+[numthreads(1, 1, 1)]
+void ComputeRotationAndLocal2WorldMat(uint3 id : SV_DispatchThreadID) {
+    uint rigbodyIdx = id.x;
+    float3x3 A = (float3x3)_RigbodyParticles[_RigbodyData[rigbodyIdx].particleIdxRange.x].ASum;
+    float3x3 U;
+    float3 D;
+    float3x3 V;
+    GetSVD3D(A, U, D, V);
+    float3x3 rotationMat = mul(U, transpose(V));
+    float3 wc = _RigbodyData[rigbodyIdx].worldBarycenter;
+    float4x4 T = {
+        1, 0, 0, wc.x,
+        0, 1, 0, wc.y,
+        0, 0, 1, wc.z,
+        0, 0, 0, 1
+    };
+    float4x4 R = {
+        float4(rotationMat._m00_m01_m02, 0),
+        float4(rotationMat._m10_m11_m12, 0),
+        float4(rotationMat._m20_m21_m22, 0),
+        float4(0, 0, 0, 1)
+    };
+    _RigbodyData[rigbodyIdx].local2world = mul(T, R);
+}
+
+[numthreads(PBF_BLOCK_SIZE, 1, 1)]
+void UpdateRigbodyParticlePos(uint3 id : SV_DispatchThreadID) {
+    const uint idx = id.x;
+    if (_ParticleBufferSorted[idx].rigbodyParticleIdx != -1) {
+        int rigbodyParticleIdx = _ParticleBufferSorted[idx].rigbodyParticleIdx;
+        _ParticleBufferSorted[idx].oldPos =
+            mul(_RigbodyData[_RigbodyParticles[rigbodyParticleIdx].rigbodyIdx].local2world,
+            float4(_RigbodyParticles[rigbodyParticleIdx].rLocal, 1)).xyz;
+    }
+}
 
 [numthreads(PBF_BLOCK_SIZE, 1, 1)]
 void DebugKernel(uint3 id : SV_DispatchThreadID) {
