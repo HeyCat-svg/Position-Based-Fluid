@@ -173,7 +173,7 @@ MonoBehaviour:
   m_Gravity: {x: 0, y: -9.8, z: 0}
   m_dt: 0.016
   m_IterNum: 6
-  REST_DENSITY: 0.2
+  REST_DENSITY: 0.1
   H: 3.5
   K: 0.1
   N: 4
@@ -451,7 +451,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: de9b33b5996516f40b98e98aac522228, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_Mass: 20
+  m_Mass: 5
 --- !u!23 &1508321520
 MeshRenderer:
   m_ObjectHideFlags: 0
