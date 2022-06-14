@@ -384,11 +384,25 @@ namespace PositionBasedFluid {
             m_PBFCS.SetBuffer(m_ComputeRotationAndLocal2WorldMatKernel, "_RigbodyParticles", m_RigidbodyParticleBuffer);
             m_PBFCS.Dispatch(m_ComputeRotationAndLocal2WorldMatKernel, m_RigbodyNum, 1, 1);
 
+            StaticRigbodyUpdate();
+
             // update rigbody position
             m_PBFCS.SetBuffer(m_UpdateRigbodyParticlePosKernel, "_RigbodyData", m_RigidbodyDataBuffer);
             m_PBFCS.SetBuffer(m_UpdateRigbodyParticlePosKernel, "_RigbodyParticles", m_RigidbodyParticleBuffer);
             m_PBFCS.SetBuffer(m_UpdateRigbodyParticlePosKernel, "_ParticleBufferSorted", m_ParticleBuffer_B);
             m_PBFCS.Dispatch(m_UpdateRigbodyParticlePosKernel, m_ParticleNum / PBF_BLOCK_SIZE, 1, 1);
+        }
+
+        // 更新刚体loacl2world
+        void StaticRigbodyUpdate() {
+            // p = m_RigidbodyDataBuffer.GetNativeBufferPtr();
+            //m_RigidbodyDataBuffer.GetData(m_Rigidbodys);
+            //for (int i = 0; i < m_RigbodyNum; ++i) {
+            //    if (m_Rigidbodys[i].isStatic == 1) {
+            //        m_Rigidbodys[i].local2world = m_RigidbodyManager.GetRigbodyLocal2World(i);
+            //    }
+            //}
+            //m_RigidbodyDataBuffer.SetData(m_Rigidbodys);
         }
 
         void DebugUpdate() {

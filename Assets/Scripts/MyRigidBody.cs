@@ -14,6 +14,7 @@ namespace PositionBasedFluid {
         int m_RigbodyIdx = -1;                  // 刚体在场景中的序号
 
         public float m_Mass = 1.0f;
+        public bool isStatic = false;
         
     
         void Start() {}
@@ -67,7 +68,14 @@ namespace PositionBasedFluid {
         }
 
         public float GetMass() {
+            if (isStatic) {
+                return float.MaxValue;
+            }
             return m_Mass;
+        }
+
+        public bool GetIsStatic() {
+            return isStatic;
         }
 
         public RigidbodyParticle[] GetRigidParticles() {

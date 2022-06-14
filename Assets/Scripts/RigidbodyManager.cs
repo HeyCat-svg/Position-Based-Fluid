@@ -43,7 +43,8 @@ namespace PositionBasedFluid {
                     Matrix4x4.TRS(m_Rigidbodys[i].transform.localPosition, 
                         m_Rigidbodys[i].transform.rotation, new Vector3(1, 1, 1)),
                     m_Rigidbodys[i].GetBarycenter(),
-                    m_Rigidbodys[i].GetMass())); ;
+                    m_Rigidbodys[i].GetMass(),
+                    m_Rigidbodys[i].GetIsStatic()));
                 // 构造刚体粒子数据
                 particleList.AddRange(_particles);
                 // startIdx后移
@@ -56,6 +57,16 @@ namespace PositionBasedFluid {
 
         public int GetRigbodyMaxParticleNum() {
             return m_RigbodyMaxParticleNum;
+        }
+
+        public Matrix4x4 GetRigbodyLocal2World(int rigbodyIdx) {
+            if (rigbodyIdx < 0 || rigbodyIdx >= m_Rigidbodys.Length) {
+                return Matrix4x4.identity;
+            }
+            return Matrix4x4.TRS(
+                m_Rigidbodys[rigbodyIdx].transform.localPosition,
+                m_Rigidbodys[rigbodyIdx].transform.localRotation,
+                new Vector3(1, 1, 1));
         }
     }
 }

@@ -46,6 +46,7 @@ struct RigbodyData {
     float3 worldBarycenter;
     float mass;
     int sumBorder;
+    int isStatic;
 };
 
 struct RigbodyParticle {
@@ -478,10 +479,15 @@ void InitRigbodySumBorder(uint3 id : SV_DispatchThreadID) {
     _RigbodyData[idx].sumBorder = _RigbodyData[idx].particleIdxRange.y;
 }
 
+
 [numthreads(1, 1, 1)]
 void AddBarycenter(uint3 id : SV_DispatchThreadID) {
     uint rigbodyIdx = id.x;             // 是哪一个刚体在求和
     uint rigbodyParticleIdx = id.y;     // 是刚体的哪一个粒子在求和
+    
+    if (_RigbodyData[rigbodyIdx].isStatic) {
+        return;
+    }
     
     int curPIdx = _RigbodyData[rigbodyIdx].particleIdxRange.x + rigbodyParticleIdx;
     int targetPIdx = curPIdx + _AddStep;
@@ -491,23 +497,36 @@ void AddBarycenter(uint3 id : SV_DispatchThreadID) {
     _RigbodyParticles[curPIdx].barycenterSum += _RigbodyParticles[targetPIdx].barycenterSum;
 }
 
+
 [numthreads(1, 1, 1)]
 void UpdateRigbodySumBorder(uint3 id : SV_DispatchThreadID) {
     uint rigbodyIdx = id.x;
     _RigbodyData[rigbodyIdx].sumBorder = min(_RigbodyData[rigbodyIdx].sumBorder, _RigbodyData[rigbodyIdx].particleIdxRange.x + _AddStep - 1);
 }
 
+
 [numthreads(1, 1, 1)]
 void ComputeBarycenter(uint3 id : SV_DispatchThreadID) {
     uint rigbodyIdx = id.x;
+    
+    if (_RigbodyData[rigbodyIdx].isStatic) {
+        return;
+    }
+    
     _RigbodyData[rigbodyIdx].worldBarycenter = 
         _RigbodyParticles[_RigbodyData[rigbodyIdx].particleIdxRange.x].barycenterSum / 
         (float)(_RigbodyData[rigbodyIdx].particleIdxRange.y - _RigbodyData[rigbodyIdx].particleIdxRange.x + 1);
 }
 
+
 [numthreads(1, 1, 1)]
 void UpdateRWorldAndComputeMatA(uint3 id : SV_DispatchThreadID) {
     uint rigbodyPIdx = id.x;
+    
+    if (_RigbodyData[_RigbodyParticles[rigbodyPIdx].rigbodyIdx].isStatic) {
+        return;
+    }
+    
     _RigbodyParticles[rigbodyPIdx].rWorld =
         _RigbodyParticles[rigbodyPIdx].posWorld - _RigbodyData[_RigbodyParticles[rigbodyPIdx].rigbodyIdx].worldBarycenter;
     float3 rLoc = _RigbodyParticles[rigbodyPIdx].rLocal;
@@ -515,10 +534,15 @@ void UpdateRWorldAndComputeMatA(uint3 id : SV_DispatchThreadID) {
     _RigbodyParticles[rigbodyPIdx].ASum = mul(float4x1(rWorld, 0), float1x4(rLoc, 0));
 }
 
+
 [numthreads(1, 1, 1)]
 void AddMatA(uint3 id : SV_DispatchThreadID) {
     uint rigbodyIdx = id.x; // 是哪一个刚体在求和
     uint rigbodyParticleIdx = id.y; // 是刚体的哪一个粒子在求和
+    
+    if (_RigbodyData[rigbodyIdx].isStatic) {
+        return;
+    }
     
     int curPIdx = _RigbodyData[rigbodyIdx].particleIdxRange.x + rigbodyParticleIdx;
     int targetPIdx = curPIdx + _AddStep;
@@ -528,9 +552,15 @@ void AddMatA(uint3 id : SV_DispatchThreadID) {
     _RigbodyParticles[curPIdx].ASum += _RigbodyParticles[targetPIdx].ASum;
 }
 
+
 [numthreads(1, 1, 1)]
 void ComputeRotationAndLocal2WorldMat(uint3 id : SV_DispatchThreadID) {
     uint rigbodyIdx = id.x;
+    
+    if (_RigbodyData[rigbodyIdx].isStatic) {
+        return;
+    }
+    
     float3x3 A = (float3x3)_RigbodyParticles[_RigbodyData[rigbodyIdx].particleIdxRange.x].ASum;
     float3x3 U;
     float3 D;
@@ -553,6 +583,7 @@ void ComputeRotationAndLocal2WorldMat(uint3 id : SV_DispatchThreadID) {
     _RigbodyData[rigbodyIdx].local2world = mul(T, R);
 }
 
+
 [numthreads(PBF_BLOCK_SIZE, 1, 1)]
 void UpdateRigbodyParticlePos(uint3 id : SV_DispatchThreadID) {
     const uint idx = id.x;
@@ -563,6 +594,7 @@ void UpdateRigbodyParticlePos(uint3 id : SV_DispatchThreadID) {
             float4(_RigbodyParticles[rigbodyParticleIdx].rLocal, 1)).xyz;
     }
 }
+
 
 [numthreads(PBF_BLOCK_SIZE, 1, 1)]
 void DebugKernel(uint3 id : SV_DispatchThreadID) {

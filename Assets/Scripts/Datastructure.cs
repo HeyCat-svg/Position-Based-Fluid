@@ -220,14 +220,16 @@ namespace PositionBasedFluid.DataStructure {
         public Vector3 worldBaryCenter;         // 世界重心坐标
         public float mass;                      // 每个粒子的质量
         public int sumBorder;                   // 刚体粒子属性求和的idx上界
+        public int isStatic;                    // 刚体是否是静止的
 
-        public RigidbodyData(int startIdx, int endIdx, Matrix4x4 l2w, Vector3 _barycenter, float _mass) {
+        public RigidbodyData(int startIdx, int endIdx, Matrix4x4 l2w, Vector3 _barycenter, float _mass, bool _isStatic = false) {
             particleIdxRange = new Vector2Int(startIdx, endIdx);
             local2world = l2w;
             barycenter = _barycenter;
             worldBaryCenter = _barycenter;
             mass = _mass;
             sumBorder = endIdx;
+            isStatic = (_isStatic) ? 1 : 0;
         }
     }
 
