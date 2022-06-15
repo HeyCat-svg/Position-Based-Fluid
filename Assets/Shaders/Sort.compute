@@ -1,7 +1,7 @@
 ﻿#pragma kernel CompareAndExchange
 
 
-#define SORT_BLOCK_SIZE 512
+#define SORT_BLOCK_SIZE 64
 
 
 uint _Level;

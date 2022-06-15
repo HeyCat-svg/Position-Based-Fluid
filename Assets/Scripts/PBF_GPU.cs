@@ -8,8 +8,8 @@ using PositionBasedFluid.DataStructure;
 namespace PositionBasedFluid {
     public class PBF_GPU : MonoBehaviour {
 
-        const int SORT_BLOCK_SIZE = 512;
-        const int PBF_BLOCK_SIZE = 512;
+        const int SORT_BLOCK_SIZE = 64;
+        const int PBF_BLOCK_SIZE = 64;
 
         int m_ParticleNum;
         int m_RigbodyNum;
@@ -22,9 +22,12 @@ namespace PositionBasedFluid {
         int m_GridCellNum;      // gird cell num ceiling to multiples of PBF_BLOCK_SIZE
         float m_WQ;             // dominator of s_corr
 
+        int m_SimParticleNum = 0;        // 喷溅粒子数目 应该为PBF_BLOCK_SIZE的整数倍
+
         Particle[] m_ParticleArray;                 // 模拟的粒子 包括刚体粒子
         RigidbodyData[] m_Rigidbodys;               // 刚体总体信息
         RigidbodyParticle[] m_RigidbodyParticles;   // 刚体粒子
+        Matrix4x4[] m_RigbodyLocal2World;           // matrix of static rig from CPU to GPU
 
         int m_SortKernel;       // CompareAndExchange in sort CS
         int m_UpdateKernel;     // Update in PBF CS
@@ -45,22 +48,27 @@ namespace PositionBasedFluid {
         int m_UpdateRWorldAndComputeMatAKernel;
         int m_AddMatAKernel;
         int m_ComputeRotationAndLocal2WorldMatKernel;
+        int m_UpdateStaticLocal2WorldKernel;
         int m_UpdateRigbodyParticlePosKernel;
 
-        ComputeBuffer m_ParticleBuffer_A;       // need to rearrange particle seq from a buffer to another
+        ComputeBuffer m_ParticleBuffer_A;           // need to rearrange particle seq from a buffer to another
         ComputeBuffer m_ParticleBuffer_B;
-        ComputeBuffer m_GridParticlePair_A;     // int2[grid idx, particle idx]
+        ComputeBuffer m_GridParticlePair_A;         // int2[grid idx, particle idx]
         ComputeBuffer m_GridParticlePair_B;
-        ComputeBuffer m_GridBuffer;             // int2[start idx, end idx]
-        ComputeBuffer m_RigidbodyDataBuffer;    // 刚体总体信息
+        ComputeBuffer m_GridBuffer;                 // int2[start idx, end idx]
+        ComputeBuffer m_RigidbodyDataBuffer;        // 刚体总体信息
         ComputeBuffer m_RigidbodyParticleBuffer;    // 刚体粒子信息
+        ComputeBuffer m_Local2WorldBuffer;          // buffer store local2world matrix
 
         ComputeBuffer m_SortedGridParticlePair;
 
         public enum Mode { NUM_1k, NUM_4k, NUM_8k, NUM_16k, NUM_32k, NUM_65k, NUM_130k, NUM_260k };
+        public enum InitMode { PLACE, SPLASH };
         [SerializeField]
         [Header("Particle Num")]
         public Mode m_Mode = Mode.NUM_8k;
+        [Header("Init Mode")]
+        public InitMode m_InitMode = InitMode.PLACE;
         [Header("Fluid Domain")]
         public Vector3 m_BorderMin, m_BorderMax;
         public bool showGrid = true;
@@ -70,6 +78,9 @@ namespace PositionBasedFluid {
         public float m_dt = 0.008f;
         [Header("Iterations")]
         public int m_IterNum = 10;
+        [Header("Splash Config")]
+        public GameObject m_SplashPosture;
+        public float m_SplashRadius = 6;
 
         [Header("Rest Density")]
         public float REST_DENSITY = 1.0f;
@@ -179,18 +190,34 @@ namespace PositionBasedFluid {
         }
 
         void InitComputeBuffer() {
+            Vector2Int[] tmpArray = new Vector2Int[m_ParticleNum];
+            for (int i = 0; i < m_ParticleNum; ++i) {
+                // 针对喷溅粒子多余粒子排序问题 需要把无关粒子列于array右侧 因此gridIdx需要初始化为最大
+                tmpArray[i] = new Vector2Int(m_GridCellNum, -1);
+            }
+
             m_ParticleBuffer_A = new ComputeBuffer(m_ParticleNum, Marshal.SizeOf(typeof(Particle)));
             m_ParticleBuffer_B = new ComputeBuffer(m_ParticleNum, Marshal.SizeOf(typeof(Particle)));
             m_GridParticlePair_A = new ComputeBuffer(m_ParticleNum, Marshal.SizeOf(typeof(Vector2Int)));
+            m_GridParticlePair_A.SetData(tmpArray);
             m_GridParticlePair_B = new ComputeBuffer(m_ParticleNum, Marshal.SizeOf(typeof(Vector2Int)));
+            m_GridParticlePair_B.SetData(tmpArray);
             m_GridBuffer = new ComputeBuffer(m_GridCellNum, Marshal.SizeOf(typeof(Vector2Int)));
         
             if (m_RigbodyNum != 0) {
                 m_RigidbodyDataBuffer = new ComputeBuffer(m_RigbodyNum, Marshal.SizeOf(typeof(RigidbodyData)));
                 m_RigidbodyDataBuffer.SetData(m_Rigidbodys);
+
+                m_RigbodyLocal2World = new Matrix4x4[m_RigbodyNum];
+                for (int i = 0; i < m_RigbodyNum; ++i) {
+                    m_RigbodyLocal2World[i] = Matrix4x4.identity;
+                }
+                m_Local2WorldBuffer = new ComputeBuffer(m_RigbodyNum, Marshal.SizeOf(typeof(Matrix4x4)));
+                m_Local2WorldBuffer.SetData(m_RigbodyLocal2World);
             }
             else {
                 m_RigidbodyDataBuffer = new ComputeBuffer(1, Marshal.SizeOf(typeof(RigidbodyData)));
+                m_Local2WorldBuffer = new ComputeBuffer(1, Marshal.SizeOf(typeof(Matrix4x4)));
             }
             if (m_RigbodyParticleNum != 0) {
                 m_RigidbodyParticleBuffer = new ComputeBuffer(m_RigbodyParticleNum, Marshal.SizeOf(typeof(RigidbodyParticle)));
@@ -230,6 +257,10 @@ namespace PositionBasedFluid {
                 m_RigidbodyParticleBuffer.Release();
                 m_RigidbodyParticleBuffer = null;
             }
+            if (m_Local2WorldBuffer != null) {
+                m_Local2WorldBuffer.Release();
+                m_Local2WorldBuffer = null;
+            }
         }
 
         void InitComputeShader() {
@@ -252,6 +283,7 @@ namespace PositionBasedFluid {
             m_UpdateRWorldAndComputeMatAKernel = m_PBFCS.FindKernel("UpdateRWorldAndComputeMatA");
             m_AddMatAKernel = m_PBFCS.FindKernel("AddMatA");
             m_ComputeRotationAndLocal2WorldMatKernel = m_PBFCS.FindKernel("ComputeRotationAndLocal2WorldMat");
+            m_UpdateStaticLocal2WorldKernel = m_PBFCS.FindKernel("UpdateStaticLocal2World");
             m_UpdateRigbodyParticlePosKernel = m_PBFCS.FindKernel("UpdateRigbodyParticlePos");
 
             m_PBFCS.SetInt("_ParticleNum", m_ParticleNum);
@@ -290,23 +322,40 @@ namespace PositionBasedFluid {
                         m_Gravity,
                         m_Rigidbodys[m_RigidbodyParticles[i].rigbodyIdx].mass,
                         i);
-                    //m_ParticleArray[i] = new Particle(
-                    //    m_RigidbodyParticles[i].posWorld,
-                    //    m_Gravity,
-                    //    float.MaxValue,
-                    //    i);
                 }
             }
 
             // 再初始化流体粒子
-            AABB waterDomain = new AABB(m_BorderMin + 0.1f * m_Border.GetRange(), m_BorderMax - 0.1f * m_Border.GetRange());
-            // part particles with mass 2
-            for (int i = fluidParticleStartIdx; i < m_ParticleNum; ++i) {
-                Vector3 pos = new Vector3(
-                    waterDomain.minPos.x + Random.value * waterDomain.GetRange().x,
-                    waterDomain.minPos.y + Random.value * waterDomain.GetRange().y,
-                    waterDomain.minPos.z + Random.value * waterDomain.GetRange().z);
-                m_ParticleArray[i] = new Particle(pos, m_Gravity, 1);
+            // 喷溅模式全体粒子初始化在某圆面上 初始速度一样
+            // 放置模式全体粒子初始化在domain内的正方体中
+            if (m_InitMode == InitMode.PLACE) {
+                AABB waterDomain = new AABB(m_BorderMin + 0.1f * m_Border.GetRange(), m_BorderMax - 0.1f * m_Border.GetRange());
+                for (int i = fluidParticleStartIdx; i < m_ParticleNum; ++i) {
+                    Vector3 pos = new Vector3(
+                        waterDomain.minPos.x + Random.value * waterDomain.GetRange().x,
+                        waterDomain.minPos.y + Random.value * waterDomain.GetRange().y,
+                        waterDomain.minPos.z + Random.value * waterDomain.GetRange().z);
+                    m_ParticleArray[i] = new Particle(pos, m_Gravity, 1);
+                }
+            }
+            else if (m_InitMode == InitMode.SPLASH) {
+                Vector3 splashPos = m_SplashPosture.transform.position;
+                Vector3 splashForward = m_SplashPosture.transform.forward;
+                float restH = 0.5f * m_GridH;
+                float r = Mathf.Max(m_SplashRadius, restH);
+                int dim = Mathf.FloorToInt(r / restH);
+                // 计算一个面需要的粒子数
+                int facePNum = 0;
+                List<Vector3> faceP = new List<Vector3>();
+                for (int y = -dim; y <= dim; ++y) {
+                    for (int x = -dim; x <= dim; ++x) {
+                        Vector2 p = new Vector2(x, y) * restH;
+                        if (p.magnitude <= r) {
+                            faceP.Add(m_SplashPosture.transform.TransformPoint(new Vector3(x, y, 0) * restH));
+                        }
+                    }
+                }
+
             }
             m_ParticleBuffer_A.SetData(m_ParticleArray);
         }
@@ -334,7 +383,7 @@ namespace PositionBasedFluid {
             return input;       // output swap to input after the last exchange
         }
 
-        void ShapeMatching() {
+        void ShapeMatching(int simParticleNum) {
             // compute barycenter
             m_PBFCS.SetBuffer(m_InitRigbodySumBorderKernel, "_RigbodyData", m_RigidbodyDataBuffer);
             m_PBFCS.Dispatch(m_InitRigbodySumBorderKernel, m_RigbodyNum, 1, 1);
@@ -384,13 +433,15 @@ namespace PositionBasedFluid {
             m_PBFCS.SetBuffer(m_ComputeRotationAndLocal2WorldMatKernel, "_RigbodyParticles", m_RigidbodyParticleBuffer);
             m_PBFCS.Dispatch(m_ComputeRotationAndLocal2WorldMatKernel, m_RigbodyNum, 1, 1);
 
-            StaticRigbodyUpdate();
-
+            if (m_RigidbodyManager.HasStaticRigbody()) {
+                StaticRigbodyUpdate();
+            }
+            
             // update rigbody position
             m_PBFCS.SetBuffer(m_UpdateRigbodyParticlePosKernel, "_RigbodyData", m_RigidbodyDataBuffer);
             m_PBFCS.SetBuffer(m_UpdateRigbodyParticlePosKernel, "_RigbodyParticles", m_RigidbodyParticleBuffer);
             m_PBFCS.SetBuffer(m_UpdateRigbodyParticlePosKernel, "_ParticleBufferSorted", m_ParticleBuffer_B);
-            m_PBFCS.Dispatch(m_UpdateRigbodyParticlePosKernel, m_ParticleNum / PBF_BLOCK_SIZE, 1, 1);
+            m_PBFCS.Dispatch(m_UpdateRigbodyParticlePosKernel, simParticleNum / PBF_BLOCK_SIZE, 1, 1);
         }
 
         // 更新刚体loacl2world
@@ -403,6 +454,17 @@ namespace PositionBasedFluid {
             //    }
             //}
             //m_RigidbodyDataBuffer.SetData(m_Rigidbodys);
+
+            for (int i = 0; i < m_RigbodyNum; ++i) {
+                if (m_Rigidbodys[i].isStatic == 1) {
+                    m_RigbodyLocal2World[i] = m_RigidbodyManager.GetRigbodyLocal2World(i);
+                }
+            }
+            m_Local2WorldBuffer.SetData(m_RigbodyLocal2World);
+
+            m_PBFCS.SetBuffer(m_UpdateStaticLocal2WorldKernel, "_RigbodyData", m_RigidbodyDataBuffer);
+            m_PBFCS.SetBuffer(m_UpdateStaticLocal2WorldKernel, "_Local2World", m_Local2WorldBuffer);
+            m_PBFCS.Dispatch(m_UpdateStaticLocal2WorldKernel, m_RigbodyNum, 1, 1);
         }
 
         void DebugUpdate() {
@@ -418,14 +480,19 @@ namespace PositionBasedFluid {
         }
 
         void PBFUpdate() {
+            if (m_InitMode == InitMode.SPLASH && m_SimParticleNum == 0) {
+                return;
+            }
+            int simParticleNum = (m_InitMode == InitMode.SPLASH) ? m_SimParticleNum : m_ParticleNum;
+
             // update velocity and new position
             m_PBFCS.SetBuffer(m_UpdateKernel, "_ParticleBufferUnsorted", m_ParticleBuffer_A);
-            m_PBFCS.Dispatch(m_UpdateKernel, m_ParticleNum / PBF_BLOCK_SIZE, 1, 1);
+            m_PBFCS.Dispatch(m_UpdateKernel, simParticleNum / PBF_BLOCK_SIZE, 1, 1);
 
             // hash particle to grid cell
             m_PBFCS.SetBuffer(m_Hash2GridKernel, "_ParticleBufferUnsorted", m_ParticleBuffer_A);
             m_PBFCS.SetBuffer(m_Hash2GridKernel, "_GridParticlePair", m_GridParticlePair_A);
-            m_PBFCS.Dispatch(m_Hash2GridKernel, m_ParticleNum / PBF_BLOCK_SIZE, 1, 1);
+            m_PBFCS.Dispatch(m_Hash2GridKernel, simParticleNum / PBF_BLOCK_SIZE, 1, 1);
 
             // clear grid buffer
             m_PBFCS.SetBuffer(m_ClearGridBufferKernel, "_GridBuffer", m_GridBuffer);
@@ -438,51 +505,51 @@ namespace PositionBasedFluid {
             // build grid buffer
             m_PBFCS.SetBuffer(m_BuildGridBufferKernel, "_GridParticlePair", sortedBuffer);
             m_PBFCS.SetBuffer(m_BuildGridBufferKernel, "_GridBuffer", m_GridBuffer);
-            m_PBFCS.Dispatch(m_BuildGridBufferKernel, m_ParticleNum / PBF_BLOCK_SIZE, 1, 1);
+            m_PBFCS.Dispatch(m_BuildGridBufferKernel, simParticleNum / PBF_BLOCK_SIZE, 1, 1);
 
             // reorder particle buffer
             m_PBFCS.SetBuffer(m_ReorderParticleBufferKernel, "_GridParticlePair", sortedBuffer);
             m_PBFCS.SetBuffer(m_ReorderParticleBufferKernel, "_ParticleBufferUnsorted", m_ParticleBuffer_A);
             m_PBFCS.SetBuffer(m_ReorderParticleBufferKernel, "_ParticleBufferSorted", m_ParticleBuffer_B);
-            m_PBFCS.Dispatch(m_ReorderParticleBufferKernel, m_ParticleNum / PBF_BLOCK_SIZE, 1, 1);
+            m_PBFCS.Dispatch(m_ReorderParticleBufferKernel, simParticleNum / PBF_BLOCK_SIZE, 1, 1);
 
             // PBD start
             for (int i = 0; i < m_IterNum; ++i) {
                 // compute lambda
                 m_PBFCS.SetBuffer(m_ComputeLambdaKernel, "_ParticleBufferSorted", m_ParticleBuffer_B);
                 m_PBFCS.SetBuffer(m_ComputeLambdaKernel, "_GridBuffer", m_GridBuffer);
-                m_PBFCS.Dispatch(m_ComputeLambdaKernel, m_ParticleNum / PBF_BLOCK_SIZE, 1, 1);
+                m_PBFCS.Dispatch(m_ComputeLambdaKernel, simParticleNum / PBF_BLOCK_SIZE, 1, 1);
 
                 // compute deltaP and deal with collision
                 m_PBFCS.SetBuffer(m_ComputeDeltaPAndCollisionKernel, "_ParticleBufferSorted", m_ParticleBuffer_B);
                 m_PBFCS.SetBuffer(m_ComputeDeltaPAndCollisionKernel, "_GridBuffer", m_GridBuffer);
                 m_PBFCS.SetBuffer(m_ComputeDeltaPAndCollisionKernel, "_RigbodyParticles", m_RigidbodyParticleBuffer);
                 m_PBFCS.SetBuffer(m_ComputeDeltaPAndCollisionKernel, "_RigbodyData", m_RigidbodyDataBuffer);
-                m_PBFCS.Dispatch(m_ComputeDeltaPAndCollisionKernel, m_ParticleNum / PBF_BLOCK_SIZE, 1, 1);
+                m_PBFCS.Dispatch(m_ComputeDeltaPAndCollisionKernel, simParticleNum / PBF_BLOCK_SIZE, 1, 1);
 
                 // update position
                 m_PBFCS.SetBuffer(m_UpdatePosKernel, "_ParticleBufferSorted", m_ParticleBuffer_B);
-                m_PBFCS.Dispatch(m_UpdatePosKernel, m_ParticleNum / PBF_BLOCK_SIZE, 1, 1);
+                m_PBFCS.Dispatch(m_UpdatePosKernel, simParticleNum / PBF_BLOCK_SIZE, 1, 1);
             }
 
             // update velocity
             m_PBFCS.SetBuffer(m_UpdateVelKernel, "_ParticleBufferSorted", m_ParticleBuffer_B);
-            m_PBFCS.Dispatch(m_UpdateVelKernel, m_ParticleNum / PBF_BLOCK_SIZE, 1, 1);
+            m_PBFCS.Dispatch(m_UpdateVelKernel, simParticleNum / PBF_BLOCK_SIZE, 1, 1);
 
             // compute vorticity and deltaV (vorticity confinement and viscosity)
             m_PBFCS.SetBuffer(m_ComputeVorticityAndDeltaVKernel, "_ParticleBufferSorted", m_ParticleBuffer_B);
             m_PBFCS.SetBuffer(m_ComputeVorticityAndDeltaVKernel, "_GridBuffer", m_GridBuffer);
-            m_PBFCS.Dispatch(m_ComputeVorticityAndDeltaVKernel, m_ParticleNum / PBF_BLOCK_SIZE, 1, 1);
+            m_PBFCS.Dispatch(m_ComputeVorticityAndDeltaVKernel, simParticleNum / PBF_BLOCK_SIZE, 1, 1);
 
             // apply force and update Position Velocity
             m_PBFCS.SetBuffer(m_ApplyForceAndUpdatePVKernel, "_ParticleBufferSorted", m_ParticleBuffer_B);
             m_PBFCS.SetBuffer(m_ApplyForceAndUpdatePVKernel, "_GridBuffer", m_GridBuffer);
             m_PBFCS.SetBuffer(m_ApplyForceAndUpdatePVKernel, "_RigbodyParticles", m_RigidbodyParticleBuffer);
-            m_PBFCS.Dispatch(m_ApplyForceAndUpdatePVKernel, m_ParticleNum / PBF_BLOCK_SIZE, 1, 1);
+            m_PBFCS.Dispatch(m_ApplyForceAndUpdatePVKernel, simParticleNum / PBF_BLOCK_SIZE, 1, 1);
 
             // rigbody shape matching
             if (m_RigbodyNum != 0) {
-                ShapeMatching();
+                ShapeMatching(simParticleNum);
             }
 
             // swap buffer

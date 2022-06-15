@@ -16,12 +16,13 @@
 #pragma kernel UpdateRWorldAndComputeMatA
 #pragma kernel AddMatA
 #pragma kernel ComputeRotationAndLocal2WorldMat
+#pragma kernel UpdateStaticLocal2World
 #pragma kernel UpdateRigbodyParticlePos
 #pragma kernel DebugKernel
 
 #include "Math.cginc"
 
-#define PBF_BLOCK_SIZE 512
+#define PBF_BLOCK_SIZE 64
 
 
 struct Particle {
@@ -85,6 +86,7 @@ RWStructuredBuffer<Particle> _ParticleBufferUnsorted;
 RWStructuredBuffer<Particle> _ParticleBufferSorted;
 RWStructuredBuffer<int2> _GridParticlePair;
 RWStructuredBuffer<int2> _GridBuffer;
+RWStructuredBuffer<float4x4> _Local2World;
 
 
 int WorldCoord2GridIdx(float3 coord) {
@@ -285,10 +287,10 @@ void ComputeDeltaPAndCollision(uint3 id : SV_DispatchThreadID) {
                                     deltaP += (lambda + neighborParticle.lambda + Scorr(Poly6(l, _H))) * grad;
                                 }
                                 // fluid-solid
-                                else {
+                                else if (l < 0.5 * _H) {
                                     int rigbodyParticleIdx = neighborParticle.rigbodyParticleIdx;
                                     // 乘上_RestDensity是为了与最后的除以_RestDensity抵消
-                                    deltaP += 2e-4 * _RestDensity * curParticle.invMass / (curParticle.invMass + neighborParticle.invMass + 1e-3) *
+                                    deltaP += 8e-4 * _RestDensity * curParticle.invMass / (curParticle.invMass + neighborParticle.invMass + 1e-3) *
                                         _RigbodyParticles[rigbodyParticleIdx].distance *
                                         mul(_RigbodyData[_RigbodyParticles[rigbodyParticleIdx].rigbodyIdx].local2world,
                                         float4(_RigbodyParticles[rigbodyParticleIdx].distGrad, 0)).xyz;
@@ -318,13 +320,13 @@ void ComputeDeltaPAndCollision(uint3 id : SV_DispatchThreadID) {
                             }
                             float3 pij = curParticle.newPos - _ParticleBufferSorted[pIdx].newPos;
                             float l = length(pij);
-                            if (l < _H) {
+                            if (l < 0.5 * _H) {
                                 Particle neighborParticle = _ParticleBufferSorted[pIdx];
                                 // solid-fluid
                                 if (neighborParticle.rigbodyParticleIdx == -1) {
                                     int rigbodyParticleIdx = curParticle.rigbodyParticleIdx;
                                     // 乘上_RestDensity是为了与最后的除以_RestDensity抵消
-                                    deltaP -= 2e-4 * _RestDensity * curParticle.invMass / (curParticle.invMass + neighborParticle.invMass + 1e-3) *
+                                    deltaP -= 8e-4 * _RestDensity * curParticle.invMass / (curParticle.invMass + neighborParticle.invMass + 1e-3) *
                                         _RigbodyParticles[rigbodyParticleIdx].distance *
                                         mul(_RigbodyData[_RigbodyParticles[rigbodyParticleIdx].rigbodyIdx].local2world,
                                         float4(_RigbodyParticles[rigbodyParticleIdx].distGrad, 0)).xyz;
@@ -346,7 +348,7 @@ void ComputeDeltaPAndCollision(uint3 id : SV_DispatchThreadID) {
                                             float4(_RigbodyParticles[neighborParticle.rigbodyParticleIdx].distGrad, 0)).xyz;
                                     }
                                     // 乘上_RestDensity是为了与最后的除以_RestDensity抵消
-                                    deltaP -= 2e-4 * _RestDensity * curParticle.invMass / (curParticle.invMass + neighborParticle.invMass + 1e-3) * d * n;
+                                    deltaP -= 8e-4 * _RestDensity * curParticle.invMass / (curParticle.invMass + neighborParticle.invMass + 1e-3) * d * n;
                                 }
                             }
                         }
@@ -581,6 +583,15 @@ void ComputeRotationAndLocal2WorldMat(uint3 id : SV_DispatchThreadID) {
         float4(0, 0, 0, 1)
     };
     _RigbodyData[rigbodyIdx].local2world = mul(T, R);
+}
+
+
+[numthreads(1, 1, 1)]
+void UpdateStaticLocal2World(uint3 id : SV_DispatchThreadID) {
+    const uint rigbodyIdx = id.x;
+    if (_RigbodyData[rigbodyIdx].isStatic) {
+        _RigbodyData[rigbodyIdx].local2world = _Local2World[rigbodyIdx];
+    }
 }
 
 

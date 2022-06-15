@@ -8,6 +8,7 @@ namespace PositionBasedFluid {
     public class RigidbodyManager : MonoBehaviour {
 
         int m_RigbodyMaxParticleNum = 0;
+        bool hasStaticRigbody = false;
 
         public MyRigidbody[] m_Rigidbodys;
  
@@ -19,9 +20,11 @@ namespace PositionBasedFluid {
 
         public void Init() {
             // 刚体的整个初始化顺序 MeshVoxel->MyRigidbody->RigidbodyManager
+            hasStaticRigbody = false;
             int bodyNum = m_Rigidbodys.Length;
             for (int i = 0; i < bodyNum; ++i) {
                 m_Rigidbodys[i].Init(i);
+                hasStaticRigbody = hasStaticRigbody || m_Rigidbodys[i].GetIsStatic();
             }
         }
 
@@ -67,6 +70,10 @@ namespace PositionBasedFluid {
                 m_Rigidbodys[rigbodyIdx].transform.localPosition,
                 m_Rigidbodys[rigbodyIdx].transform.localRotation,
                 new Vector3(1, 1, 1));
+        }
+
+        public bool HasStaticRigbody() {
+            return hasStaticRigbody;
         }
     }
 }
