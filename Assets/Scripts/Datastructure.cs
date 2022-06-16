@@ -169,11 +169,11 @@ namespace PositionBasedFluid.DataStructure {
         public float invMass;
         public int rigbodyParticleIdx;
 
-        public Particle(Vector3 pos, Vector3 gravity, float mass, int _rigbodyParticleIdx = -1) {
+        public Particle(Vector3 pos, Vector3 gravity, float mass, int _rigbodyParticleIdx = -1, Vector3 vel = default(Vector3)) {
             this.oldPos = pos;
             this.newPos = pos;
             this.deltaP = Vector3.zero;
-            this.velocity = new Vector3(0, 0, 0);
+            this.velocity = vel;
             this.deltaV = Vector3.zero;
             this.force = Vector3.zero;
             this.vorticity = Vector3.zero;

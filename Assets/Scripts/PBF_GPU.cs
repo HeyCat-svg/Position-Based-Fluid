@@ -22,7 +22,10 @@ namespace PositionBasedFluid {
         int m_GridCellNum;      // gird cell num ceiling to multiples of PBF_BLOCK_SIZE
         float m_WQ;             // dominator of s_corr
 
-        int m_SimParticleNum = 0;        // 喷溅粒子数目 应该为PBF_BLOCK_SIZE的整数倍
+        int m_SimParticleNum = 0;           // 喷溅粒子数目 应该为PBF_BLOCK_SIZE的整数倍
+        int m_SimUnitParticleNum;       // 每次喷溅的粒子数目
+        float m_SplashInterval;             // 两次喷溅之间的时间（秒
+        float m_SimTime = 0;                // 模拟总时间 dt*iter
 
         Particle[] m_ParticleArray;                 // 模拟的粒子 包括刚体粒子
         RigidbodyData[] m_Rigidbodys;               // 刚体总体信息
@@ -72,6 +75,7 @@ namespace PositionBasedFluid {
         [Header("Fluid Domain")]
         public Vector3 m_BorderMin, m_BorderMax;
         public bool showGrid = true;
+        public bool showBorder = true;
         [Header("Gravity")]
         public Vector3 m_Gravity = new Vector3(0, -9.8f, 0);
         [Header("dt")]
@@ -81,6 +85,7 @@ namespace PositionBasedFluid {
         [Header("Splash Config")]
         public GameObject m_SplashPosture;
         public float m_SplashRadius = 6;
+        public float m_SplashSpeed = 5;         // 粒子沿着forward喷射速度（秒
 
         [Header("Rest Density")]
         public float REST_DENSITY = 1.0f;
@@ -150,6 +155,10 @@ namespace PositionBasedFluid {
                     }
                 }
             }
+            if (showBorder) {
+                Gizmos.color = Color.green;
+                Gizmos.DrawWireCube(m_Border.GetCenter(), m_Border.GetRange());
+            }
         }
 
         void InitPrivateVars() {
@@ -174,6 +183,8 @@ namespace PositionBasedFluid {
                     m_ParticleNum = 8192; break;
             }
 
+            m_SimTime = 0;
+            m_SimParticleNum = 0;
             m_Border = new AABB(m_BorderMin, m_BorderMax);
             m_Poly6Coeff = 315.0f / (64.0f * Mathf.PI * Mathf.Pow(H, 9));
             m_SpikyCoeff = -45.0f / (Mathf.PI * Mathf.Pow(H, 6));
@@ -339,13 +350,11 @@ namespace PositionBasedFluid {
                 }
             }
             else if (m_InitMode == InitMode.SPLASH) {
-                Vector3 splashPos = m_SplashPosture.transform.position;
                 Vector3 splashForward = m_SplashPosture.transform.forward;
                 float restH = 0.5f * m_GridH;
                 float r = Mathf.Max(m_SplashRadius, restH);
                 int dim = Mathf.FloorToInt(r / restH);
                 // 计算一个面需要的粒子数
-                int facePNum = 0;
                 List<Vector3> faceP = new List<Vector3>();
                 for (int y = -dim; y <= dim; ++y) {
                     for (int x = -dim; x <= dim; ++x) {
@@ -355,7 +364,54 @@ namespace PositionBasedFluid {
                         }
                     }
                 }
-
+                int facePNum = 0, layerNum = 0, remainder = 0;
+                // 截面粒子数小于simP的最小单位
+                if (faceP.Count <= PBF_BLOCK_SIZE) {
+                    facePNum = faceP.Count;
+                    layerNum = Mathf.CeilToInt(PBF_BLOCK_SIZE / (float)facePNum);
+                    remainder = PBF_BLOCK_SIZE % facePNum;
+                }
+                else {
+                    facePNum = faceP.Count / PBF_BLOCK_SIZE * PBF_BLOCK_SIZE;
+                    layerNum = 1;
+                    remainder = facePNum;
+                }
+                m_SimUnitParticleNum = facePNum * (layerNum - 1) + remainder;
+                m_SplashInterval = layerNum * restH / m_SplashSpeed;
+                // 初始化喷溅粒子
+                int i = fluidParticleStartIdx;
+                // 添加padding粒子
+                int paddingNum = PBF_BLOCK_SIZE - m_RigbodyParticleNum % PBF_BLOCK_SIZE;
+                for (int j = 0; j < paddingNum; ++j) {
+                    Vector3 pos = new Vector3(
+                       m_Border.minPos.x + Random.value * m_Border.GetRange().x,
+                       m_Border.minPos.y + Random.value * m_Border.GetRange().y,
+                       m_Border.minPos.z + Random.value * m_Border.GetRange().z);
+                    m_ParticleArray[i + j] = new Particle(pos, m_Gravity, 1);
+                }
+                i += paddingNum;
+                // 喷溅粒子添加
+                while (i != m_ParticleNum) {
+                    for (int layer = 0; layer < layerNum - 1; ++layer) {
+                        for (int pIdx = 0; pIdx < facePNum; ++pIdx) {
+                            m_ParticleArray[i] = new Particle(
+                                faceP[pIdx] - layer * restH * splashForward,
+                                m_Gravity, 1, -1, splashForward * m_SplashSpeed);
+                            if ((++i) == m_ParticleNum) {
+                                goto endLoop;
+                            }
+                        }
+                    }
+                    for (int pIdx = 0; pIdx < remainder; ++pIdx) {
+                        m_ParticleArray[i] = new Particle(
+                            faceP[pIdx] - (layerNum - 1) * restH * splashForward,
+                            m_Gravity, 1, -1, splashForward * m_SplashSpeed);
+                        if ((++i) == m_ParticleNum) {
+                            goto endLoop;
+                        }
+                    }
+                }
+                endLoop:;
             }
             m_ParticleBuffer_A.SetData(m_ParticleArray);
         }
@@ -480,6 +536,11 @@ namespace PositionBasedFluid {
         }
 
         void PBFUpdate() {
+            m_SimTime += m_dt;
+            if (m_InitMode == InitMode.SPLASH) {
+                m_SimParticleNum = Mathf.CeilToInt(m_RigbodyParticleNum / (float)PBF_BLOCK_SIZE) * PBF_BLOCK_SIZE + 
+                    Mathf.Min((int)(m_SimTime / m_SplashInterval) * m_SimUnitParticleNum, m_ParticleNum);
+            }
             if (m_InitMode == InitMode.SPLASH && m_SimParticleNum == 0) {
                 return;
             }
