@@ -157,7 +157,7 @@ namespace PositionBasedFluid {
             }
             if (showBorder) {
                 Gizmos.color = Color.green;
-                Gizmos.DrawWireCube(m_Border.GetCenter(), m_Border.GetRange());
+                Gizmos.DrawWireCube(0.5f * (m_BorderMin + m_BorderMax), m_BorderMax - m_BorderMin);
             }
         }
 
@@ -184,7 +184,7 @@ namespace PositionBasedFluid {
             }
 
             m_SimTime = 0;
-            m_SimParticleNum = 0;
+            m_SimParticleNum = m_ParticleNum;
             m_Border = new AABB(m_BorderMin, m_BorderMax);
             m_Poly6Coeff = 315.0f / (64.0f * Mathf.PI * Mathf.Pow(H, 9));
             m_SpikyCoeff = -45.0f / (Mathf.PI * Mathf.Pow(H, 6));
@@ -315,6 +315,7 @@ namespace PositionBasedFluid {
             m_PBFCS.SetFloat("_EpsilonLambda", EPSILON_LAMBDA);
             m_PBFCS.SetFloat("_EpsilonVorticity", EPSILON_VORTICITY);
             m_PBFCS.SetFloat("_CViscosity", C_VISCOSITY);
+            m_PBFCS.SetInt("_SimParticleNum", m_ParticleNum);
 
             // sort CS
             m_SortKernel = m_SortCS.FindKernel("CompareAndExchange");
@@ -377,7 +378,7 @@ namespace PositionBasedFluid {
                     remainder = facePNum;
                 }
                 m_SimUnitParticleNum = facePNum * (layerNum - 1) + remainder;
-                m_SplashInterval = layerNum * restH / m_SplashSpeed;
+                m_SplashInterval = 0.5f * layerNum * restH / m_SplashSpeed;
                 // 初始化喷溅粒子
                 int i = fluidParticleStartIdx;
                 // 添加padding粒子
@@ -414,6 +415,7 @@ namespace PositionBasedFluid {
                 endLoop:;
             }
             m_ParticleBuffer_A.SetData(m_ParticleArray);
+            m_ParticleBuffer_B.SetData(m_ParticleArray);    // bug fixed: 未被模拟的粒子信息如果只复制到Abuffer则会在交换过程中丢失
         }
 
         ComputeBuffer GPUSort() {
@@ -502,15 +504,6 @@ namespace PositionBasedFluid {
 
         // 更新刚体loacl2world
         void StaticRigbodyUpdate() {
-            // p = m_RigidbodyDataBuffer.GetNativeBufferPtr();
-            //m_RigidbodyDataBuffer.GetData(m_Rigidbodys);
-            //for (int i = 0; i < m_RigbodyNum; ++i) {
-            //    if (m_Rigidbodys[i].isStatic == 1) {
-            //        m_Rigidbodys[i].local2world = m_RigidbodyManager.GetRigbodyLocal2World(i);
-            //    }
-            //}
-            //m_RigidbodyDataBuffer.SetData(m_Rigidbodys);
-
             for (int i = 0; i < m_RigbodyNum; ++i) {
                 if (m_Rigidbodys[i].isStatic == 1) {
                     m_RigbodyLocal2World[i] = m_RigidbodyManager.GetRigbodyLocal2World(i);
@@ -537,14 +530,15 @@ namespace PositionBasedFluid {
 
         void PBFUpdate() {
             m_SimTime += m_dt;
+            int simParticleNum = m_ParticleNum;
             if (m_InitMode == InitMode.SPLASH) {
-                m_SimParticleNum = Mathf.CeilToInt(m_RigbodyParticleNum / (float)PBF_BLOCK_SIZE) * PBF_BLOCK_SIZE + 
-                    Mathf.Min((int)(m_SimTime / m_SplashInterval) * m_SimUnitParticleNum, m_ParticleNum);
+                m_SimParticleNum = Mathf.Min(Mathf.CeilToInt(m_RigbodyParticleNum / (float)PBF_BLOCK_SIZE) * PBF_BLOCK_SIZE +
+                    (int)(m_SimTime / m_SplashInterval) * m_SimUnitParticleNum, m_ParticleNum);
+                simParticleNum = m_SimParticleNum;
+                if (m_SimParticleNum == 0) {
+                    return;
+                }
             }
-            if (m_InitMode == InitMode.SPLASH && m_SimParticleNum == 0) {
-                return;
-            }
-            int simParticleNum = (m_InitMode == InitMode.SPLASH) ? m_SimParticleNum : m_ParticleNum;
 
             // update velocity and new position
             m_PBFCS.SetBuffer(m_UpdateKernel, "_ParticleBufferUnsorted", m_ParticleBuffer_A);
@@ -624,7 +618,7 @@ namespace PositionBasedFluid {
         }
 
         public int GetParticleNum() {
-            return m_ParticleNum;
+            return m_SimParticleNum;
         }
 
         public Vector3Int GetGridDim() {

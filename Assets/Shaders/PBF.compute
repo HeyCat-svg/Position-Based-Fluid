@@ -156,6 +156,7 @@ float Scorr(float numerator) {
 [numthreads(PBF_BLOCK_SIZE, 1, 1)]
 void Update(uint3 id : SV_DispatchThreadID) {
     const uint idx = id.x;
+    
     // apply force
     _ParticleBufferUnsorted[idx].velocity += _dt * _ParticleBufferUnsorted[idx].force;
     // predict position
@@ -213,8 +214,7 @@ void ReorderParticleBuffer(uint3 id : SV_DispatchThreadID) {
 [numthreads(PBF_BLOCK_SIZE, 1, 1)]
 void ComputeLambda(uint3 id : SV_DispatchThreadID) {
     const uint idx = id.x;
-    
-    if (_ParticleBufferSorted[idx].rigbodyParticleIdx != -1) {
+    if ( _ParticleBufferSorted[idx].rigbodyParticleIdx != -1) {
         return;
     }
     
@@ -375,7 +375,7 @@ void UpdatePos(uint3 id : SV_DispatchThreadID) {
 
 [numthreads(PBF_BLOCK_SIZE, 1, 1)]
 void UpdateVel(uint3 id : SV_DispatchThreadID) {
-    const int idx = id.x;
+    const int idx = id.x; 
     _ParticleBufferSorted[idx].velocity = _dtInv * (_ParticleBufferSorted[idx].newPos - _ParticleBufferSorted[idx].oldPos);
 }
 
@@ -425,6 +425,7 @@ void ComputeVorticityAndDeltaV(uint3 id : SV_DispatchThreadID) {
 [numthreads(PBF_BLOCK_SIZE, 1, 1)]
 void ApplyForceAndUpdatePV(uint3 id : SV_DispatchThreadID) {
     const uint idx = id.x;
+    
     if (_ParticleBufferSorted[idx].rigbodyParticleIdx != -1) {
         int rigbodyParticleIdx = _ParticleBufferSorted[idx].rigbodyParticleIdx;
         _ParticleBufferSorted[idx].force = _ParticleBufferSorted[idx].invMass * _ParticleBufferSorted[idx].mass * _Gravity;
