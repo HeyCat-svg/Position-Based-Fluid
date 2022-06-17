@@ -246,4 +246,11 @@ namespace PositionBasedFluid.DataStructure {
             this.position = pos;
         }
     }
+
+    public struct GridInfo {
+        public Vector2Int particleRange;
+        public Vector3 barycenter;
+        public int particleNum;
+        public int layer;
+    }
 }

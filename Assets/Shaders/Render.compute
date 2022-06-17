@@ -1,0 +1,127 @@
+
+
+#define PBF_BLOCK_SIZE 64
+
+struct Particle {
+    float3 oldPos;
+    float3 newPos;
+    float3 deltaP;
+    float3 velocity;
+    float3 deltaV;
+    float3 force;
+    float3 vorticity;
+    int3 gridCoord;
+    float lambda;
+    float mass;
+    float invMass;
+    int rigbodyParticleIdx;
+};
+
+struct GridInfo {
+    int2 particleRange;
+    float3 barycenter;
+    int particleNum;
+    int layer;
+};
+
+int _GridNum;
+int3 _GridDim;
+int _NMin;
+
+StructuredBuffer<Particle> _ParticleBufferSorted : register(t1);
+StructuredBuffer<int2> _GridBuffer : register(t2);
+RWStructuredBuffer<GridInfo> _GridInfoBuffer : register(u1);
+RWStructuredBuffer<int> _IsNarrowBand : register(u2);   // 是否Narrow-Band粒子 从性能角度上考虑不和particleBuffer放在一起？
+
+
+int3 GridIdx2Coord(int idx) {
+    if (idx < 0 || idx >= _GridNum) {
+        return int3(0, 0, 0);
+    }
+    return int3(idx % _GridDim.x, idx / _GridDim.x % _GridDim.y, idx / (_GridDim.x * _GridDim.y));
+}
+
+// ret: is coord valid(in border domain)
+bool GridCoord2GridIdx(int3 coord, out int idx) {
+    if (any(coord < int3(0, 0, 0)) || any(coord >= _GridDim)) {
+        return false;
+    }
+    idx = coord.x + coord.y * _GridDim.x + coord.z * _GridDim.x * _GridDim.y;
+    return true;
+}
+
+[numthreads(PBF_BLOCK_SIZE, 1, 1)]
+void InitGridInfo(uint3 id : SV_DispatchThreadID) {
+    const uint idx = id.x;
+    
+    int2 range = _GridBuffer[idx];
+    _GridInfoBuffer[idx].particleRange = range;
+    _GridInfoBuffer[idx].layer = 0;
+    if (range.x == -1 || range.y == -1) {
+        _GridInfoBuffer[idx].particleNum = 0;
+        return;
+    }
+    _GridInfoBuffer[idx].particleNum = range.y - range.x + 1;
+    float3 barycenter = float3(0, 0, 0);
+    for (int i = range.x; i <= range.y; ++i) {
+        barycenter += _ParticleBufferSorted[i].oldPos;
+    }
+    barycenter /= _GridInfoBuffer[idx].particleNum;
+    _GridInfoBuffer[idx].barycenter = barycenter;
+}
+
+[numthreads(PBF_BLOCK_SIZE, 1, 1)]
+void FindLayer1(uint3 id : SV_DispatchThreadID) {
+    const uint idx = id.x;
+    if (_GridInfoBuffer[idx].particleNum == 0) {
+        return;
+    }
+    int3 gridCoord = GridIdx2Coord(idx);
+    for (int i = gridCoord.x - 1; i <= gridCoord.x + 1; ++i) {
+        for (int j = gridCoord.y - 1; j <= gridCoord.y + 1; ++j) {
+            for (int k = gridCoord.z - 1; k <= gridCoord.z + 1; ++k) {
+                int3 neighborCoord = int3(i, j, k);
+                int neighborIdx = 0;
+                if (GridCoord2GridIdx(neighborCoord, neighborIdx)) {
+                    if (_GridInfoBuffer[neighborIdx].particleNum == 0) {
+                        _GridInfoBuffer[idx].layer = 1;
+                        return;
+                    }
+                }
+                else {
+                    _GridInfoBuffer[idx].layer = 1;
+                    return;
+                }
+            }
+        }
+    }
+}
+
+[numthreads(PBF_BLOCK_SIZE, 1, 1)]
+void FindLayer2(uint3 id : SV_DispatchThreadID) {
+    const uint idx = id.x;
+    if (_GridInfoBuffer[idx].particleNum == 0 || _GridInfoBuffer[idx].layer == 1) {
+        return;
+    }
+    int3 gridCoord = GridIdx2Coord(idx);
+    for (int i = gridCoord.x - 1; i <= gridCoord.x + 1; ++i) {
+        for (int j = gridCoord.y - 1; j <= gridCoord.y + 1; ++j) {
+            for (int k = gridCoord.z - 1; k <= gridCoord.z + 1; ++k) {
+                int3 neighborCoord = int3(i, j, k);
+                int neighborIdx = 0;
+                if (GridCoord2GridIdx(neighborCoord, neighborIdx)) {
+                    if (_GridInfoBuffer[neighborIdx].layer == 1 && _GridInfoBuffer[neighborIdx].particleNum <= _NMin) {
+                        _GridInfoBuffer[idx].layer = 2;
+                        return;
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+[numthreads(PBF_BLOCK_SIZE, 1, 1)]
+void FindNarrowBandParticle(uint3 id : SV_DispatchThreadID) {
+    
+}

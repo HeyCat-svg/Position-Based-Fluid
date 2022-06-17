@@ -621,6 +621,10 @@ namespace PositionBasedFluid {
             return m_SimParticleNum;
         }
 
+        public int GetGridCellNum() {
+            return m_GridCellNum;
+        }
+
         public Vector3Int GetGridDim() {
             return m_GridDim;
         }
