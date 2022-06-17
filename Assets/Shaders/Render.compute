@@ -1,4 +1,8 @@
-
+#pragma kernel InitGridInfo
+#pragma kernel FindLayer1
+#pragma kernel FindLayer2
+#pragma kernel ClearNarrowBandParticle
+#pragma kernel FindNarrowBandParticle
 
 #define PBF_BLOCK_SIZE 64
 
@@ -120,8 +124,18 @@ void FindLayer2(uint3 id : SV_DispatchThreadID) {
     }
 }
 
+[numthreads(PBF_BLOCK_SIZE, 1, 1)]
+void ClearNarrowBandParticle(uint3 id : SV_DispatchThreadID) {
+    _IsNarrowBand[id.x] = 0;
+}
 
 [numthreads(PBF_BLOCK_SIZE, 1, 1)]
 void FindNarrowBandParticle(uint3 id : SV_DispatchThreadID) {
-    
+    const uint idx = id.x;
+    if (_GridInfoBuffer[idx].layer != 0) {
+        int2 range = _GridInfoBuffer[idx].particleRange;
+        for (int i = range.x; i <= range.y; ++i) {
+            _IsNarrowBand[i] = 1;
+        }
+    }
 }
