@@ -42,7 +42,8 @@ int3 GridIdx2Coord(int idx) {
     if (idx < 0 || idx >= _GridNum) {
         return int3(0, 0, 0);
     }
-    return int3(idx % _GridDim.x, idx / _GridDim.x % _GridDim.y, idx / (_GridDim.x * _GridDim.y));
+    uint uidx = (uint)idx;
+    return int3(uidx % (uint)_GridDim.x, uidx / (uint)_GridDim.x % (uint)_GridDim.y, uidx / (uint)(_GridDim.x * _GridDim.y));
 }
 
 // ret: is coord valid(in border domain)
@@ -65,12 +66,17 @@ void InitGridInfo(uint3 id : SV_DispatchThreadID) {
         _GridInfoBuffer[idx].particleNum = 0;
         return;
     }
-    _GridInfoBuffer[idx].particleNum = range.y - range.x + 1;
+    int particleNum = 0;
     float3 barycenter = float3(0, 0, 0);
     for (int i = range.x; i <= range.y; ++i) {
+        if (_ParticleBufferSorted[i].rigbodyParticleIdx != -1) {
+            continue;
+        }
         barycenter += _ParticleBufferSorted[i].oldPos;
+        particleNum++;
     }
-    barycenter /= _GridInfoBuffer[idx].particleNum;
+    barycenter /= ((float)particleNum + 1e-3);
+    _GridInfoBuffer[idx].particleNum = particleNum;
     _GridInfoBuffer[idx].barycenter = barycenter;
 }
 
@@ -135,6 +141,9 @@ void FindNarrowBandParticle(uint3 id : SV_DispatchThreadID) {
     if (_GridInfoBuffer[idx].layer != 0) {
         int2 range = _GridInfoBuffer[idx].particleRange;
         for (int i = range.x; i <= range.y; ++i) {
+            if (_ParticleBufferSorted[i].rigbodyParticleIdx != -1) {
+                continue;
+            }
             _IsNarrowBand[i] = 1;
         }
     }

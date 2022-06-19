@@ -74,32 +74,20 @@
 				void geom(point v2g input[1], inout TriangleStream<g2f> outStream) {
 					g2f output;
 
-					float4 pos = input[0].pos;
+					float4 viewPos = mul(UNITY_MATRIX_V, input[0].pos);
 					float4 col = input[0].col;
-
-					float4x4 billboardMatrix = UNITY_MATRIX_V;
-					billboardMatrix._m03 =
-					billboardMatrix._m13 =
-					billboardMatrix._m23 =
-					billboardMatrix._m33 = 0;
-					billboardMatrix = transpose(billboardMatrix);
 
 					for (int x = 0; x < 2; x++) {
 						for (int y = 0; y < 2; y++) {
+							float r = (input[0].isRigbody > 1e-3) ? _ParticleRad * 5 : _ParticleRad;
 							float2 tex = float2(x, y);
 							output.tex = tex;
-
-							float r = (input[0].isRigbody > 1e-3) ? _ParticleRad * 5 : _ParticleRad;
-							output.pos = pos + mul(billboardMatrix, float4((tex * 2 - float2(1, 1)) * r, 0, 0));
-							// output.pos = pos + mul(float4((tex * 2 - float2(1, 1)) * _ParticleRad, 0, 1), billboardMatrix);
-							output.pos = mul(UNITY_MATRIX_VP, output.pos);
-
+							output.pos = viewPos + float4((tex * 2 - float2(1, 1)) * r, 0, 0);
+							output.pos = mul(UNITY_MATRIX_P, output.pos);
 							output.col = col;
-
 							outStream.Append(output);
 						}
 					}
-
 					outStream.RestartStrip();
 				}
 

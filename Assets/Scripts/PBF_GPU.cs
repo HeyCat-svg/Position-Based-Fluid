@@ -617,8 +617,12 @@ namespace PositionBasedFluid {
             return m_ParticleBuffer_A;
         }
 
-        public int GetParticleNum() {
+        public int GetSimParticleNum() {
             return m_SimParticleNum;
+        }
+
+        public int GetParticleNum() {
+            return m_ParticleNum;
         }
 
         public int GetGridCellNum() {
@@ -639,6 +643,10 @@ namespace PositionBasedFluid {
 
         public ComputeBuffer GetGridBuffer() {
             return m_GridBuffer;
+        }
+
+        public int GetSimBlockSize() {
+            return PBF_BLOCK_SIZE;
         }
     }
 }
