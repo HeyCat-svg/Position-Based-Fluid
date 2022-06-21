@@ -15,9 +15,6 @@
 
             #include "UnityCG.cginc"
 
-            sampler2D _MainTex;
-            float _ParticleRad;
-
             struct Particle {
                 float3 oldPos;
                 float3 newPos;
@@ -33,7 +30,10 @@
                 int rigbodyParticleIdx;
             };
 
-            StructuredBuffer<Particle> _Particles;
+            sampler2D _MainTex;
+            float _ParticleRad;
+
+            StructuredBuffer<float4> _Particles;
             StructuredBuffer<int> _IsNarrowBand;
 
             struct v2g {
@@ -49,7 +49,7 @@
 
             v2g vert (uint id : SV_VertexID) {
                 v2g output;
-                output.pos = float4(_Particles[id].oldPos, 1);
+                output.pos = _Particles[id];
                 output.tex = float2(0, 0);
                 output.isNarrowBand = _IsNarrowBand[id];
                 return output;
@@ -59,8 +59,8 @@
             void geom(point v2g input[1], inout TriangleStream<g2f> outStream) {
                 g2f output;
                 // 非NarrowBand粒子 应该被剔除
-                if (!input[0].isNarrowBand) {
-                    output.pos = float4(1, 1, 1, 0.1);  // 在裁剪阶段会被剔除
+                if (input[0].isNarrowBand != 1) {
+                    output.pos = float4(1, 1, 1, 1e-3);  // 在裁剪阶段会被剔除
                     output.tex = float2(0, 0);
                     outStream.Append(output);
                     outStream.Append(output);
@@ -68,6 +68,7 @@
                     outStream.RestartStrip();
                     return;
                 }
+
                 float4 viewPos = mul(UNITY_MATRIX_V, input[0].pos);
 
                 for (int x = 0; x < 2; ++x) {

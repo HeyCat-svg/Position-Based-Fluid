@@ -252,5 +252,6 @@ namespace PositionBasedFluid.DataStructure {
         public Vector3 barycenter;
         public int particleNum;
         public int layer;
+        public Vector3Int gridCoord;
     }
 }

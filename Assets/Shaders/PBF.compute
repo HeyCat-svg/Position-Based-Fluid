@@ -18,6 +18,7 @@
 #pragma kernel ComputeRotationAndLocal2WorldMat
 #pragma kernel UpdateStaticLocal2World
 #pragma kernel UpdateRigbodyParticlePos
+#pragma kernel CopyParticlePos
 #pragma kernel DebugKernel
 
 #include "Math.cginc"
@@ -84,6 +85,7 @@ RWStructuredBuffer<RigbodyData> _RigbodyData;
 RWStructuredBuffer<RigbodyParticle> _RigbodyParticles;
 RWStructuredBuffer<Particle> _ParticleBufferUnsorted;
 RWStructuredBuffer<Particle> _ParticleBufferSorted;
+RWStructuredBuffer<float4> _ParticlePosBuffer;
 RWStructuredBuffer<int2> _GridParticlePair;
 RWStructuredBuffer<int2> _GridBuffer;
 RWStructuredBuffer<float4x4> _Local2World;
@@ -605,6 +607,14 @@ void UpdateRigbodyParticlePos(uint3 id : SV_DispatchThreadID) {
             mul(_RigbodyData[_RigbodyParticles[rigbodyParticleIdx].rigbodyIdx].local2world,
             float4(_RigbodyParticles[rigbodyParticleIdx].rLocal, 1)).xyz;
     }
+}
+
+
+[numthreads(PBF_BLOCK_SIZE, 1, 1)]
+void CopyParticlePos(uint3 id : SV_DispatchThreadID) {
+    const uint idx = id.x;
+    _ParticlePosBuffer[idx] = float4(_ParticleBufferSorted[idx].oldPos, 1);
+
 }
 
 

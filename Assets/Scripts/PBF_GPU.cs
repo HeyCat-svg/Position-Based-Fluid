@@ -53,11 +53,13 @@ namespace PositionBasedFluid {
         int m_ComputeRotationAndLocal2WorldMatKernel;
         int m_UpdateStaticLocal2WorldKernel;
         int m_UpdateRigbodyParticlePosKernel;
+        int m_CopyParticlePosKernel;
 
         ComputeBuffer m_ParticleBuffer_A;           // need to rearrange particle seq from a buffer to another
         ComputeBuffer m_ParticleBuffer_B;
         ComputeBuffer m_GridParticlePair_A;         // int2[grid idx, particle idx]
         ComputeBuffer m_GridParticlePair_B;
+        ComputeBuffer m_ParticlePosBuffer;          // pingpong buffer 需要将粒子位置复制到该buffer用于渲染
         ComputeBuffer m_GridBuffer;                 // int2[start idx, end idx]
         ComputeBuffer m_RigidbodyDataBuffer;        // 刚体总体信息
         ComputeBuffer m_RigidbodyParticleBuffer;    // 刚体粒子信息
@@ -109,6 +111,7 @@ namespace PositionBasedFluid {
         public ComputeShader m_SortCS;
 
         public RigidbodyManager m_RigidbodyManager;
+        public ParticleRenderer m_ParticleRenderer;
 
         void Start() {
             // 首先初始化RigidbodyManager
@@ -122,8 +125,9 @@ namespace PositionBasedFluid {
             InitComputeShader();
             InitParticles();
 
-            Debug.Log(1.0f / m_WQ);
-            Debug.Log(0.0f * float.MaxValue * 2.0f);
+            if (m_ParticleRenderer != null) {
+                m_ParticleRenderer.Init();
+            }
         }
 
         void Update() {
@@ -213,6 +217,7 @@ namespace PositionBasedFluid {
             m_GridParticlePair_A.SetData(tmpArray);
             m_GridParticlePair_B = new ComputeBuffer(m_ParticleNum, Marshal.SizeOf(typeof(Vector2Int)));
             m_GridParticlePair_B.SetData(tmpArray);
+            m_ParticlePosBuffer = new ComputeBuffer(m_ParticleNum, Marshal.SizeOf(typeof(Vector4)));
             m_GridBuffer = new ComputeBuffer(m_GridCellNum, Marshal.SizeOf(typeof(Vector2Int)));
         
             if (m_RigbodyNum != 0) {
@@ -256,6 +261,10 @@ namespace PositionBasedFluid {
                 m_GridParticlePair_B.Release();
                 m_GridParticlePair_B = null;
             }
+            if (m_ParticlePosBuffer != null) {
+                m_ParticlePosBuffer.Release();
+                m_ParticlePosBuffer = null;
+            }
             if (m_GridBuffer != null) {
                 m_GridBuffer.Release();
                 m_GridBuffer = null;
@@ -296,6 +305,7 @@ namespace PositionBasedFluid {
             m_ComputeRotationAndLocal2WorldMatKernel = m_PBFCS.FindKernel("ComputeRotationAndLocal2WorldMat");
             m_UpdateStaticLocal2WorldKernel = m_PBFCS.FindKernel("UpdateStaticLocal2World");
             m_UpdateRigbodyParticlePosKernel = m_PBFCS.FindKernel("UpdateRigbodyParticlePos");
+            m_CopyParticlePosKernel = m_PBFCS.FindKernel("CopyParticlePos");
 
             m_PBFCS.SetInt("_ParticleNum", m_ParticleNum);
             m_PBFCS.SetFloat("_Poly6Coeff", m_Poly6Coeff);
@@ -441,6 +451,32 @@ namespace PositionBasedFluid {
             return input;       // output swap to input after the last exchange
         }
 
+        void BuildGridBuffer(int simParticleNum) {
+            // hash particle to grid cell
+            m_PBFCS.SetBuffer(m_Hash2GridKernel, "_ParticleBufferUnsorted", m_ParticleBuffer_A);
+            m_PBFCS.SetBuffer(m_Hash2GridKernel, "_GridParticlePair", m_GridParticlePair_A);
+            m_PBFCS.Dispatch(m_Hash2GridKernel, simParticleNum / PBF_BLOCK_SIZE, 1, 1);
+
+            // clear grid buffer
+            m_PBFCS.SetBuffer(m_ClearGridBufferKernel, "_GridBuffer", m_GridBuffer);
+            m_PBFCS.Dispatch(m_ClearGridBufferKernel, m_GridCellNum / PBF_BLOCK_SIZE, 1, 1);
+
+            // sort
+            ComputeBuffer sortedBuffer = GPUSort();
+            m_SortedGridParticlePair = sortedBuffer;
+
+            // build grid buffer
+            m_PBFCS.SetBuffer(m_BuildGridBufferKernel, "_GridParticlePair", sortedBuffer);
+            m_PBFCS.SetBuffer(m_BuildGridBufferKernel, "_GridBuffer", m_GridBuffer);
+            m_PBFCS.Dispatch(m_BuildGridBufferKernel, simParticleNum / PBF_BLOCK_SIZE, 1, 1);
+
+            // reorder particle buffer
+            m_PBFCS.SetBuffer(m_ReorderParticleBufferKernel, "_GridParticlePair", sortedBuffer);
+            m_PBFCS.SetBuffer(m_ReorderParticleBufferKernel, "_ParticleBufferUnsorted", m_ParticleBuffer_A);
+            m_PBFCS.SetBuffer(m_ReorderParticleBufferKernel, "_ParticleBufferSorted", m_ParticleBuffer_B);
+            m_PBFCS.Dispatch(m_ReorderParticleBufferKernel, simParticleNum / PBF_BLOCK_SIZE, 1, 1);
+        }
+
         void ShapeMatching(int simParticleNum) {
             // compute barycenter
             m_PBFCS.SetBuffer(m_InitRigbodySumBorderKernel, "_RigbodyData", m_RigidbodyDataBuffer);
@@ -544,29 +580,7 @@ namespace PositionBasedFluid {
             m_PBFCS.SetBuffer(m_UpdateKernel, "_ParticleBufferUnsorted", m_ParticleBuffer_A);
             m_PBFCS.Dispatch(m_UpdateKernel, simParticleNum / PBF_BLOCK_SIZE, 1, 1);
 
-            // hash particle to grid cell
-            m_PBFCS.SetBuffer(m_Hash2GridKernel, "_ParticleBufferUnsorted", m_ParticleBuffer_A);
-            m_PBFCS.SetBuffer(m_Hash2GridKernel, "_GridParticlePair", m_GridParticlePair_A);
-            m_PBFCS.Dispatch(m_Hash2GridKernel, simParticleNum / PBF_BLOCK_SIZE, 1, 1);
-
-            // clear grid buffer
-            m_PBFCS.SetBuffer(m_ClearGridBufferKernel, "_GridBuffer", m_GridBuffer);
-            m_PBFCS.Dispatch(m_ClearGridBufferKernel, m_GridCellNum / PBF_BLOCK_SIZE, 1, 1);
-
-            // sort
-            ComputeBuffer sortedBuffer = GPUSort();
-            m_SortedGridParticlePair = sortedBuffer;
-
-            // build grid buffer
-            m_PBFCS.SetBuffer(m_BuildGridBufferKernel, "_GridParticlePair", sortedBuffer);
-            m_PBFCS.SetBuffer(m_BuildGridBufferKernel, "_GridBuffer", m_GridBuffer);
-            m_PBFCS.Dispatch(m_BuildGridBufferKernel, simParticleNum / PBF_BLOCK_SIZE, 1, 1);
-
-            // reorder particle buffer
-            m_PBFCS.SetBuffer(m_ReorderParticleBufferKernel, "_GridParticlePair", sortedBuffer);
-            m_PBFCS.SetBuffer(m_ReorderParticleBufferKernel, "_ParticleBufferUnsorted", m_ParticleBuffer_A);
-            m_PBFCS.SetBuffer(m_ReorderParticleBufferKernel, "_ParticleBufferSorted", m_ParticleBuffer_B);
-            m_PBFCS.Dispatch(m_ReorderParticleBufferKernel, simParticleNum / PBF_BLOCK_SIZE, 1, 1);
+            BuildGridBuffer(simParticleNum);
 
             // PBD start
             for (int i = 0; i < m_IterNum; ++i) {
@@ -607,6 +621,16 @@ namespace PositionBasedFluid {
                 ShapeMatching(simParticleNum);
             }
 
+            //// swap buffer
+            //ComputeBuffer tmp = m_ParticleBuffer_A;
+            //m_ParticleBuffer_A = m_ParticleBuffer_B;
+            //m_ParticleBuffer_B = tmp;
+
+            //BuildGridBuffer(simParticleNum);
+
+            // Narrow Band Rendering
+            m_ParticleRenderer.CollectGridInfo();
+
             // swap buffer
             ComputeBuffer tmp = m_ParticleBuffer_A;
             m_ParticleBuffer_A = m_ParticleBuffer_B;
@@ -643,6 +667,10 @@ namespace PositionBasedFluid {
 
         public ComputeBuffer GetGridBuffer() {
             return m_GridBuffer;
+        }
+
+        public ComputeBuffer GetParticlePosBuffer() {
+            return m_ParticlePosBuffer;
         }
 
         public int GetSimBlockSize() {
