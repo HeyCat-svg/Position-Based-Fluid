@@ -28,13 +28,10 @@ namespace PositionBasedFluid {
         // Render Targets
         int m_DepthRT;
         int m_DepthFilterRT;
+        int m_NormalMapRT;
 
         MaterialPropertyBlock m_MatPropBlock;
-
         CommandBuffer m_ParticleRenderCmd;  // 计算particle深度
-        CommandBuffer m_GaussFilterCmd;     // filter depth map
-        CommandBuffer m_NormalMapCmd;       // 计算normal map
-        CommandBuffer m_VolumeCmd;          // 计算volume
 
         // buffer don't need to be inited
         ComputeBuffer m_GridBuffer;
@@ -45,7 +42,7 @@ namespace PositionBasedFluid {
 
 
         void OnRenderObject() {
-            // return;
+            return;
             Vector3Int m_GridDim = m_Simulator.GetGridDim();
             m_ParticleRenderMat.SetPass(0);
             m_ParticleRenderMat.SetBuffer("_Particles", m_Simulator.GetBuffer());
@@ -61,9 +58,9 @@ namespace PositionBasedFluid {
         }
 
         void OnDestroy () {
-            //if (m_MainCamera != null) {
-            //    m_MainCamera.RemoveCommandBuffer(CameraEvent.AfterEverything, m_ParticleRenderCmd);
-            //}
+            if (m_MainCamera != null) {
+                m_MainCamera.RemoveCommandBuffer(CameraEvent.BeforeImageEffects, m_ParticleRenderCmd);
+            }
             if (m_GridInfoBuffer != null) {
                 m_GridInfoBuffer.Release();
                 m_GridInfoBuffer = null;
@@ -79,24 +76,40 @@ namespace PositionBasedFluid {
         }
 
         void InitCommandBuffer() {
-            int m_DepthRT = Shader.PropertyToID("_DepthRT");
+            m_DepthRT = Shader.PropertyToID("_DepthRT");
+            int depthRTDepthBuffer = Shader.PropertyToID("_DepthBuffer");
+            m_DepthFilterRT = Shader.PropertyToID("_DepthFilterRT");
+            int depthFilterRT = Shader.PropertyToID("_DepthFilterRTTmp");
+            m_NormalMapRT = Shader.PropertyToID("_NormalMap");
 
             m_MatPropBlock = new MaterialPropertyBlock();
-            m_MatPropBlock.SetBuffer("_Particles", m_Simulator.GetParticlePosBuffer());
+            m_MatPropBlock.SetBuffer("_Particles", m_Simulator.GetBuffer());
             m_MatPropBlock.SetBuffer("_IsNarrowBand", m_IsNarrowBandBuffer);
 
             // render Narrow Band Particle
-            m_ParticleRenderCmd = new CommandBuffer();
-            m_ParticleRenderCmd.name = "Particle Render";
-            m_ParticleRenderCmd.GetTemporaryRT(m_DepthRT, -1, -1, 24, FilterMode.Bilinear);
-            m_ParticleRenderCmd.SetRenderTarget(m_DepthRT);
+            m_ParticleRenderCmd = new CommandBuffer{ name = "Particle Depth" };
+            m_ParticleRenderCmd.GetTemporaryRT(m_DepthRT, -1, -1, 0, FilterMode.Bilinear, RenderTextureFormat.ARGBFloat);
+            m_ParticleRenderCmd.GetTemporaryRT(depthRTDepthBuffer, -1, -1, 24, FilterMode.Bilinear, RenderTextureFormat.Depth);
+            m_ParticleRenderCmd.SetRenderTarget(m_DepthRT, (RenderTargetIdentifier)depthRTDepthBuffer);
             m_ParticleRenderCmd.ClearRenderTarget(true, true, Color.black);
             m_ParticleRenderCmd.DrawProcedural(
                 Matrix4x4.identity, m_ParticleRenderMat, 0, MeshTopology.Points, m_ParticleNum, 1, m_MatPropBlock);
-            m_ParticleRenderCmd.Blit(m_DepthRT, BuiltinRenderTextureType.CameraTarget);
+            
+            // Gauss Filter
+            m_ParticleRenderCmd.GetTemporaryRT(m_DepthFilterRT, Screen.width / 2, Screen.height / 2, 0, FilterMode.Bilinear, RenderTextureFormat.ARGBFloat);
+            m_ParticleRenderCmd.GetTemporaryRT(depthFilterRT, Screen.width / 2, Screen.height / 2, 0, FilterMode.Bilinear, RenderTextureFormat.ARGBFloat);
+            m_ParticleRenderCmd.Blit(m_DepthRT, m_DepthFilterRT);
+            m_ParticleRenderCmd.Blit(m_DepthFilterRT, depthFilterRT, m_ParticleRenderMat, 1);   // vertical filter
+            m_ParticleRenderCmd.Blit(depthFilterRT, m_DepthFilterRT, m_ParticleRenderMat, 2);   // horizontal filter
+            m_ParticleRenderCmd.Blit(m_DepthFilterRT, m_DepthRT);
 
-            // 
-            m_MainCamera.AddCommandBuffer(CameraEvent.AfterEverything, m_ParticleRenderCmd);
+            // normal map
+            m_ParticleRenderCmd.GetTemporaryRT(m_NormalMapRT, -1, -1, 0, FilterMode.Bilinear, RenderTextureFormat.ARGBFloat);
+            m_ParticleRenderCmd.Blit(m_DepthRT, m_NormalMapRT, m_ParticleRenderMat, 3);
+            m_ParticleRenderCmd.Blit(m_NormalMapRT, BuiltinRenderTextureType.CameraTarget);
+
+            m_MainCamera.AddCommandBuffer(CameraEvent.BeforeImageEffects, m_ParticleRenderCmd);
+
             Debug.Log("Render command added!");
         }
 
@@ -123,7 +136,7 @@ namespace PositionBasedFluid {
             m_GridInfoBuffer = new ComputeBuffer(m_Simulator.GetGridCellNum(), Marshal.SizeOf(typeof(GridInfo)));
             m_IsNarrowBandBuffer = new ComputeBuffer(m_ParticleNum, Marshal.SizeOf(typeof(int)));
 
-            // InitCommandBuffer();
+            InitCommandBuffer();
         }
 
         public void CollectGridInfo() {

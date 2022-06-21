@@ -1,4 +1,5 @@
 ﻿#pragma kernel CompareAndExchange
+#pragma kernel ErrorCorrect
 
 
 #define SORT_BLOCK_SIZE 64
@@ -21,4 +22,15 @@ void CompareAndExchange(uint3 id : SV_DispatchThreadID) {
     // idx&_LevelMask==0 then ascending else descending
     _Output[idx] = (Compare(_Input[idx & ~_Level], _Input[idx | _Level]) == (bool) (_LevelMask & idx)) ?
         _Input[idx ^ _Level] : _Input[idx];
+}
+
+
+[numthreads(SORT_BLOCK_SIZE, 1, 1)]
+void ErrorCorrect(uint3 id : SV_DispatchThreadID) {
+    const uint idx = id.x;
+    if (idx + 1 < _LevelMask && _Output[idx].x > _Output[idx + 1].x) {
+        int2 tmp = _Output[idx];
+        _Output[idx] = _Output[idx + 1];
+        _Output[idx + 1] = tmp;
+    }
 }

@@ -178,7 +178,7 @@ MonoBehaviour:
   m_SplashPosture: {fileID: 1225315126}
   m_SplashRadius: 10
   m_SplashSpeed: 25
-  REST_DENSITY: 0.04
+  REST_DENSITY: 0.035
   H: 3.5
   K: 0.1
   N: 4
@@ -206,7 +206,7 @@ MonoBehaviour:
   m_ParticleRenderMat: {fileID: 2100000, guid: 965a4a57a0b7ef947a3248a2426e84d6, type: 2}
   m_RenderCS: {fileID: 7200000, guid: 64e482fe8fd5c9c46aee6bdb8c5d6fbf, type: 3}
   m_MainCamera: {fileID: 963194227}
-  m_NMin: 4
+  m_NMin: 8
 --- !u!114 &13276660
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -303,7 +303,7 @@ MonoBehaviour:
   m_Mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
   m_VoxelH: 1.7
   m_VoxelRenderMat: {fileID: 2100000, guid: 9c528104c73d9f0438cacf525e8cceaf, type: 2}
-  m_UniformScale: 16
+  m_UniformScale: 18
   showVoxels: 0
   showGradient: 0
 --- !u!114 &120478375
@@ -318,8 +318,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: de9b33b5996516f40b98e98aac522228, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_Mass: 0.3
-  isStatic: 0
+  m_Mass: 0.15
+  isStatic: 1
 --- !u!4 &120478376
 Transform:
   m_ObjectHideFlags: 0
@@ -478,7 +478,7 @@ Camera:
     width: 1
     height: 1
   near clip plane: 0.3
-  far clip plane: 1000
+  far clip plane: 500
   field of view: 60
   orthographic: 0
   orthographic size: 5
@@ -504,13 +504,13 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 963194225}
-  m_LocalRotation: {x: 0.25316328, y: 0.20082727, z: -0.053811513, w: 0.944818}
-  m_LocalPosition: {x: 9.7, y: 37, z: -6.7}
+  m_LocalRotation: {x: 0.32655495, y: 0.42240065, z: -0.16638802, w: 0.82900816}
+  m_LocalPosition: {x: -8.8, y: 63, z: -9}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 0}
   m_RootOrder: 0
-  m_LocalEulerAnglesHint: {x: 30, y: 24, z: 0}
+  m_LocalEulerAnglesHint: {x: 43, y: 54, z: 0}
 --- !u!143 &963194229
 CharacterController:
   m_ObjectHideFlags: 0

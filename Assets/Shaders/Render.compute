@@ -26,7 +26,6 @@ struct GridInfo {
     float3 barycenter;
     int particleNum;
     int layer;
-    int3 gridCoord;
 };
 
 int _GridNum;
@@ -67,7 +66,6 @@ void InitGridInfo(uint3 id : SV_DispatchThreadID) {
     _GridInfoBuffer[idx].particleRange = range;
     _GridInfoBuffer[idx].layer = 0;
     _GridInfoBuffer[idx].particleNum = 0;
-    _GridInfoBuffer[idx].gridCoord = int3(0, 0, 0);
     if (range.x == -1 || range.y == -1) {
         return;
     }
@@ -93,7 +91,6 @@ void FindLayer1(uint3 id : SV_DispatchThreadID) {
         return;
     }
     int3 gridCoord = GridIdx2Coord(idx);
-    _GridInfoBuffer[idx].gridCoord = gridCoord;
     for (int i = gridCoord.x - 1; i <= gridCoord.x + 1; ++i) {
         for (int j = gridCoord.y - 1; j <= gridCoord.y + 1; ++j) {
             for (int k = gridCoord.z - 1; k <= gridCoord.z + 1; ++k) {

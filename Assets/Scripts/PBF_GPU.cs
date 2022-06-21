@@ -33,6 +33,7 @@ namespace PositionBasedFluid {
         Matrix4x4[] m_RigbodyLocal2World;           // matrix of static rig from CPU to GPU
 
         int m_SortKernel;       // CompareAndExchange in sort CS
+        int m_ErrorCorrectKernel;
         int m_UpdateKernel;     // Update in PBF CS
         int m_Hash2GridKernel;
         int m_ClearGridBufferKernel;
@@ -53,13 +54,11 @@ namespace PositionBasedFluid {
         int m_ComputeRotationAndLocal2WorldMatKernel;
         int m_UpdateStaticLocal2WorldKernel;
         int m_UpdateRigbodyParticlePosKernel;
-        int m_CopyParticlePosKernel;
 
         ComputeBuffer m_ParticleBuffer_A;           // need to rearrange particle seq from a buffer to another
         ComputeBuffer m_ParticleBuffer_B;
         ComputeBuffer m_GridParticlePair_A;         // int2[grid idx, particle idx]
         ComputeBuffer m_GridParticlePair_B;
-        ComputeBuffer m_ParticlePosBuffer;          // pingpong buffer 需要将粒子位置复制到该buffer用于渲染
         ComputeBuffer m_GridBuffer;                 // int2[start idx, end idx]
         ComputeBuffer m_RigidbodyDataBuffer;        // 刚体总体信息
         ComputeBuffer m_RigidbodyParticleBuffer;    // 刚体粒子信息
@@ -217,7 +216,6 @@ namespace PositionBasedFluid {
             m_GridParticlePair_A.SetData(tmpArray);
             m_GridParticlePair_B = new ComputeBuffer(m_ParticleNum, Marshal.SizeOf(typeof(Vector2Int)));
             m_GridParticlePair_B.SetData(tmpArray);
-            m_ParticlePosBuffer = new ComputeBuffer(m_ParticleNum, Marshal.SizeOf(typeof(Vector4)));
             m_GridBuffer = new ComputeBuffer(m_GridCellNum, Marshal.SizeOf(typeof(Vector2Int)));
         
             if (m_RigbodyNum != 0) {
@@ -261,10 +259,6 @@ namespace PositionBasedFluid {
                 m_GridParticlePair_B.Release();
                 m_GridParticlePair_B = null;
             }
-            if (m_ParticlePosBuffer != null) {
-                m_ParticlePosBuffer.Release();
-                m_ParticlePosBuffer = null;
-            }
             if (m_GridBuffer != null) {
                 m_GridBuffer.Release();
                 m_GridBuffer = null;
@@ -305,7 +299,6 @@ namespace PositionBasedFluid {
             m_ComputeRotationAndLocal2WorldMatKernel = m_PBFCS.FindKernel("ComputeRotationAndLocal2WorldMat");
             m_UpdateStaticLocal2WorldKernel = m_PBFCS.FindKernel("UpdateStaticLocal2World");
             m_UpdateRigbodyParticlePosKernel = m_PBFCS.FindKernel("UpdateRigbodyParticlePos");
-            m_CopyParticlePosKernel = m_PBFCS.FindKernel("CopyParticlePos");
 
             m_PBFCS.SetInt("_ParticleNum", m_ParticleNum);
             m_PBFCS.SetFloat("_Poly6Coeff", m_Poly6Coeff);
@@ -329,6 +322,7 @@ namespace PositionBasedFluid {
 
             // sort CS
             m_SortKernel = m_SortCS.FindKernel("CompareAndExchange");
+            m_ErrorCorrectKernel = m_SortCS.FindKernel("ErrorCorrect");
         }
 
         void InitParticles() {
@@ -447,7 +441,12 @@ namespace PositionBasedFluid {
                     output = tmp;
                 }
             }
-
+            // correct error 以上排序有一点bug 之后再查看
+            for (int i = 0; i < 6; ++i) {
+                m_SortCS.SetBuffer(m_ErrorCorrectKernel, "_Output", input);
+                m_SortCS.Dispatch(m_ErrorCorrectKernel, sortNum / SORT_BLOCK_SIZE, 1, 1);
+            }
+            
             return input;       // output swap to input after the last exchange
         }
 
@@ -667,10 +666,6 @@ namespace PositionBasedFluid {
 
         public ComputeBuffer GetGridBuffer() {
             return m_GridBuffer;
-        }
-
-        public ComputeBuffer GetParticlePosBuffer() {
-            return m_ParticlePosBuffer;
         }
 
         public int GetSimBlockSize() {
