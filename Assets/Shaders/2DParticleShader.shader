@@ -6,7 +6,7 @@
 
 		SubShader{
 			ZWrite Off
-			Blend SrcAlpha OneMinusSrcAlpha
+			// Blend SrcAlpha OneMinusSrcAlpha
 
 			Pass{
 				CGPROGRAM
@@ -77,17 +77,17 @@
 				void geom(point v2g input[1], inout TriangleStream<g2f> outStream) {
 					g2f output;
 
-					// 非NarrowBand粒子 应该被剔除
-					if (input[0].isNarrowBand != 1 && input[0].isRigbody != 1) {
-						output.pos = float4(1, 1, 1, 1e-3);  // 在裁剪阶段会被剔除
-						output.tex = float2(0, 0);
-						output.col = input[0].col;
-						outStream.Append(output);
-						outStream.Append(output);
-						outStream.Append(output);
-						outStream.RestartStrip();
-						return;
-					}
+					//// 非NarrowBand粒子 应该被剔除
+					//if (input[0].isNarrowBand != 1 && input[0].isRigbody != 1) {
+					//	output.pos = float4(1, 1, 1, 1e-3);  // 在裁剪阶段会被剔除
+					//	output.tex = float2(0, 0);
+					//	output.col = input[0].col;
+					//	outStream.Append(output);
+					//	outStream.Append(output);
+					//	outStream.Append(output);
+					//	outStream.RestartStrip();
+					//	return;
+					//}
 
 					float4 viewPos = mul(UNITY_MATRIX_V, input[0].pos);
 					float4 col = input[0].col;

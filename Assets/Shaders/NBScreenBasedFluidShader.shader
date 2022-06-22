@@ -2,9 +2,10 @@
     Properties {
         _ParticleTex ("ParticleTexture", 2D) = "white" {}
         _ParticleRad("ParticleRadius", Range(0.01, 3)) = 0.05
-        _FilterRad("GaussFilterRadius", Range(0.01, 3)) = 1
+        _FilterRad("GaussFilterRadius", Range(0.01, 5)) = 1
         _NormalSampleRad("NormalSampleRadius", Range(0.01, 3)) = 1
         _VolumeRad("VolumeRadius", Range(0.001, 3)) = 0.005
+        _SampleDelta("SampleDelta", Range(0.1, 2)) = 1
     }
     SubShader {
         // pass 0: conpute linear depth
@@ -130,8 +131,8 @@
 
             static const float GaussWeight[7] = { 0.0205, 0.0855, 0.232, 0.324, 0.232, 0.0855, 0.0205 };
 
-            sampler2D _DepthFilterRT;
-            float4 _DepthFilterRT_TexelSize;
+            sampler2D _FilterSource;
+            float4 _FilterSource_TexelSize;
             float _FilterRad;
 
             v2f vert(a2v i) {
@@ -143,10 +144,17 @@
 
             float4 frag(v2f input) : SV_Target{
                 float3 sum = float3(0, 0, 0);
+                float3 curCol = tex2D(_FilterSource, input.tex).xyz;
+                if (all(curCol < 1e-4)) {
+                    return float4(0, 0, 0, 1);
+                }
                 for (int i = 0; i < 7; ++i) {
                     float2 uv = float2(
-                        input.tex.x, input.tex.y + (i - 3) * _DepthFilterRT_TexelSize.y * _FilterRad);
-                    sum += GaussWeight[i] * tex2D(_DepthFilterRT, uv).xyz;
+                        input.tex.x, input.tex.y + (i - 3) * _FilterSource_TexelSize.y * _FilterRad);
+                    float3 targetCol = tex2D(_FilterSource, uv).xyz;
+                    targetCol = (all(curCol < 1e-4)) ? curCol : targetCol;
+                    float3 diff = curCol - targetCol;
+                    sum += exp(-dot(diff, diff)) * GaussWeight[i] * targetCol;
                 }
                 return float4(sum, 1.0);
             }
@@ -179,8 +187,8 @@
 
             static const float GaussWeight[7] = { 0.0205, 0.0855, 0.232, 0.324, 0.232, 0.0855, 0.0205 };
 
-            sampler2D _DepthFilterRTTmp;
-            float4 _DepthFilterRTTmp_TexelSize;
+            sampler2D _FilterSource;
+            float4 _FilterSource_TexelSize;
             float _FilterRad;
 
             v2f vert(a2v i) {
@@ -192,10 +200,17 @@
 
             float4 frag(v2f input) : SV_Target{
                 float3 sum = float3(0, 0, 0);
+                float3 curCol = tex2D(_FilterSource, input.tex).xyz;
+                if (all(curCol < 1e-4)) {
+                    return float4(0, 0, 0, 1);
+                }
                 for (int i = 0; i < 7; ++i) {
                     float2 uv = float2(
-                        input.tex.x + (i - 3) * _DepthFilterRTTmp_TexelSize.x * _FilterRad, input.tex.y);
-                    sum += GaussWeight[i] * tex2D(_DepthFilterRTTmp, uv).xyz;
+                        input.tex.x + (i - 3) * _FilterSource_TexelSize.x * _FilterRad, input.tex.y);
+                    float3 targetCol = tex2D(_FilterSource, uv).xyz;
+                    targetCol = (all(curCol < 1e-4)) ? curCol : targetCol;
+                    float3 diff = curCol - targetCol;
+                    sum += exp(-dot(diff, diff)) * GaussWeight[i] * targetCol;
                 }
                 return float4(sum, 1.0);
             }
@@ -236,13 +251,34 @@
             }
 
             float4 frag(v2f i) : COLOR{
-                float dx =
-                    (tex2D(_DepthRT, float2(i.tex.x + _DepthRT_TexelSize.x * _NormalSampleRad, i.tex.y)).x -
-                        tex2D(_DepthRT, float2(i.tex.x - _DepthRT_TexelSize.x * _NormalSampleRad, i.tex.y)).x) / (2.0 * _DepthRT_TexelSize.x * _NormalSampleRad);
-                float dy =
-                    (tex2D(_DepthRT, float2(i.tex.x, i.tex.y + _DepthRT_TexelSize.y * _NormalSampleRad)).x -
-                        tex2D(_DepthRT, float2(i.tex.x, i.tex.y - _DepthRT_TexelSize.y * _NormalSampleRad)).x) / (2.0 * _DepthRT_TexelSize.y * _NormalSampleRad);
-                return float4(normalize(float3(dx, dy, 1)), 1);
+                float depth = tex2D(_DepthRT, i.tex).x;
+                if (depth < 1e-4) {
+                    return float4(0, 0, 0, 1);
+                }
+                float2 xy = float2(2, 2);
+                float depthx2 = tex2D(_DepthRT, float2(i.tex.x + _DepthRT_TexelSize.x * _NormalSampleRad, i.tex.y)).x;
+                if (depthx2 < 1e-4) {
+                    depthx2 = depth;
+                    xy.x--;
+                }
+                float depthx1 = tex2D(_DepthRT, float2(i.tex.x - _DepthRT_TexelSize.x * _NormalSampleRad, i.tex.y)).x;
+                if (depthx1 < 1e-4) {
+                    depthx1 = depth;
+                    xy.x--;
+                }
+                float depthy2 = tex2D(_DepthRT, float2(i.tex.x, i.tex.y + _DepthRT_TexelSize.y * _NormalSampleRad)).x;
+                if (depthy2 < 1e-4) {
+                    depthy2 = depth;
+                    xy.y--;
+                }
+                float depthy1 = tex2D(_DepthRT, float2(i.tex.x, i.tex.y - _DepthRT_TexelSize.y * _NormalSampleRad)).x;
+                if (depthy1 < 1e-4) {
+                    depthy1 = depth;
+                    xy.y--;
+                }
+                float dx = (depthx2 - depthx1) / (xy.x * _DepthRT_TexelSize.x * _NormalSampleRad + 1e-4);
+                float dy = (depthy2 - depthy1) / (xy.y * _DepthRT_TexelSize.y * _NormalSampleRad + 1e-4);
+                return float4(0.5 * normalize(float3(dx, dy, -1)) + 0.5, 1);
             }
             ENDCG
         }
@@ -334,12 +370,99 @@
                 offset.x *= _Aspect;
                 float dist = length(offset);
                 // clip(_VolumeRad - dist);
-                float x = dist * 60;
-                float gaussVal = i.n * exp(-x * x * 0.2) * 0.005;
+                float x = dist * 80;
+                float gaussVal = i.n * exp(-x * x * 0.5) * 0.005;
 
                 // return float4(1, 1, 1, 1);
                 return float4(gaussVal, gaussVal, gaussVal, 1);
             }
+            ENDCG
+        }
+
+        // pass 5: down/up sample
+        Pass {
+            Tags { "RenderType" = "Opaque" }
+            ZWrite Off
+            ZTest Off
+
+            CGPROGRAM
+            #pragma target 5.0
+            #pragma vertex vert
+            #pragma fragment frag
+
+            #include "UnityCG.cginc"
+
+            struct a2v {
+                float4 vertex : POSITION;
+                float2 tex : TEXCOORD0;
+            };
+
+            struct v2f {
+                float4 vertex : SV_POSITION;
+                float2 tex : TEXCOORD0;
+            };
+
+            sampler2D _SampleSource;
+            float4 _SampleSource_TexelSize;
+            float _SampleDelta;
+
+            v2f vert(a2v i) {
+                v2f o;
+                o.vertex = UnityObjectToClipPos(i.vertex);
+                o.tex = i.tex;
+                return o;
+            }
+
+            float4 frag(v2f i) : SV_Target{
+                float4 o = _SampleSource_TexelSize.xyxy * float2(-_SampleDelta, _SampleDelta).xxyy;
+                float4 sum = tex2D(_SampleSource, i.tex + o.xy) + tex2D(_SampleSource, i.tex + o.zy) +
+                    tex2D(_SampleSource, i.tex + o.xw) + tex2D(_SampleSource, i.tex + o.zw);
+                return float4(0.25 * sum.xyz, 1.0);
+            }
+
+            ENDCG
+        }
+
+        // pass 6: light attenuation
+        Pass {
+            Tags { "RenderType" = "Opaque" }
+            ZWrite Off
+            ZTest Off
+
+            CGPROGRAM
+            #pragma target 5.0
+            #pragma vertex vert
+            #pragma fragment frag
+
+            #include "UnityCG.cginc"
+
+            struct a2v {
+                float4 vertex : POSITION;
+                float2 tex : TEXCOORD0;
+            };
+
+            struct v2f {
+                float4 vertex : SV_POSITION;
+                float2 tex : TEXCOORD0;
+            };
+
+            sampler2D _VolumeTex;
+
+            v2f vert(a2v i) {
+                v2f o;
+                o.vertex = UnityObjectToClipPos(i.vertex);
+                o.tex = i.tex;
+                return o;
+            }
+
+            float4 frag(v2f i) : SV_Target{
+                float vol = tex2D(_VolumeTex, i.tex).x;
+                if (vol < 1e-4) {
+                    return float4(0, 0, 0, 1);
+                }
+                return float4(float3(0.756, 0.90244, 1.0) * exp(-2 * vol), 1);
+            }
+
             ENDCG
         }
     }

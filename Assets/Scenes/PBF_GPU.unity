@@ -178,8 +178,8 @@ MonoBehaviour:
   m_SplashPosture: {fileID: 1225315126}
   m_SplashRadius: 10
   m_SplashSpeed: 25
-  REST_DENSITY: 0.035
-  H: 2.8
+  REST_DENSITY: 0.1
+  H: 3.5
   K: 0.1
   N: 4
   Q_MAG: 0.3
@@ -204,9 +204,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_Simulator: {fileID: 13276658}
   m_ParticleRenderMat: {fileID: 2100000, guid: 965a4a57a0b7ef947a3248a2426e84d6, type: 2}
+  m_DebugParticleRenderMat: {fileID: 2100000, guid: edef580d182a2a04291699d0525d48f7,
+    type: 2}
   m_RenderCS: {fileID: 7200000, guid: 64e482fe8fd5c9c46aee6bdb8c5d6fbf, type: 3}
   m_MainCamera: {fileID: 963194227}
-  m_NMin: 8
+  m_NMin: 16
 --- !u!114 &13276660
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -221,6 +223,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_Rigidbodys:
   - {fileID: 120478375}
+  - {fileID: 1508321519}
 --- !u!1 &120478371
 GameObject:
   m_ObjectHideFlags: 0
@@ -478,7 +481,7 @@ Camera:
     width: 1
     height: 1
   near clip plane: 0.3
-  far clip plane: 1000
+  far clip plane: 400
   field of view: 60
   orthographic: 0
   orthographic size: 5
@@ -504,8 +507,8 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 963194225}
-  m_LocalRotation: {x: 0.34159705, y: 0.046722762, z: -0.017005691, w: 0.9385304}
-  m_LocalPosition: {x: 36, y: 45, z: -5}
+  m_LocalRotation: {x: -0.30146778, y: -0.47585627, z: 0.17777477, w: -0.8068916}
+  m_LocalPosition: {x: -22.511654, y: 45.811142, z: 0.5124841}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 0}
