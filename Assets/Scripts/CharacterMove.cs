@@ -7,6 +7,7 @@ public class CharacterMove : MonoBehaviour {
     public float m_RotationSpeed = 60.0f;
     public float m_MoveSpeed = 12.0f;
     public CharacterController m_Controller;
+    public bool isStatic = false;
 
     float m_XRotation = 0.0f;
     float m_YRotation = 0.0f;
@@ -18,6 +19,10 @@ public class CharacterMove : MonoBehaviour {
     }
 
     void Update() {
+        if (isStatic) {
+            return;
+        }
+
         float dt = Time.deltaTime;
         float mouseX = Input.GetAxis("Mouse X") * m_RotationSpeed * dt;
         float mouseY = Input.GetAxis("Mouse Y") * m_RotationSpeed * dt;

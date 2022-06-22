@@ -3,12 +3,13 @@
         _ParticleTex ("ParticleTexture", 2D) = "white" {}
         _ParticleRad("ParticleRadius", Range(0.01, 3)) = 0.05
         _FilterRad("GaussFilterRadius", Range(0.01, 3)) = 1
+        _NormalSampleRad("NormalSampleRadius", Range(0.01, 3)) = 1
+        _VolumeRad("VolumeRadius", Range(0.001, 3)) = 0.005
     }
     SubShader {
-        Tags { "RenderType"="Opaque" }
-        
         // pass 0: conpute linear depth
         Pass {
+            Tags { "RenderType" = "Opaque" }
             ZWrite On
 
             CGPROGRAM
@@ -106,6 +107,7 @@
 
         // pass 1: Gauss vertical filter
         Pass {
+            Tags { "RenderType" = "Opaque" }
             ZWrite Off
             ZTest Off
 
@@ -154,6 +156,7 @@
 
         // pass 2: Gauss horizontal filter
         Pass {
+            Tags { "RenderType" = "Opaque" }
             ZWrite Off
             ZTest Off
 
@@ -202,6 +205,7 @@
 
         // pass 3: normal estimation
         Pass {
+            Tags { "RenderType" = "Opaque" }
             ZWrite Off
             ZTest Off
 
@@ -222,6 +226,7 @@
 
             sampler2D _DepthRT;
             float4 _DepthRT_TexelSize;
+            float _NormalSampleRad;
 
             v2f vert(a2v i) {
                 v2f o;
@@ -232,14 +237,109 @@
 
             float4 frag(v2f i) : COLOR{
                 float dx =
-                    (tex2D(_DepthRT, float2(i.tex.x + _DepthRT_TexelSize.x, i.tex.y)).x -
-                        tex2D(_DepthRT, float2(i.tex.x - _DepthRT_TexelSize.x, i.tex.y)).x) / (2.0 * _DepthRT_TexelSize.x);
+                    (tex2D(_DepthRT, float2(i.tex.x + _DepthRT_TexelSize.x * _NormalSampleRad, i.tex.y)).x -
+                        tex2D(_DepthRT, float2(i.tex.x - _DepthRT_TexelSize.x * _NormalSampleRad, i.tex.y)).x) / (2.0 * _DepthRT_TexelSize.x * _NormalSampleRad);
                 float dy =
-                    (tex2D(_DepthRT, float2(i.tex.x, i.tex.y + _DepthRT_TexelSize.y)).x -
-                        tex2D(_DepthRT, float2(i.tex.x, i.tex.y - _DepthRT_TexelSize.y)).x) / (2.0 * _DepthRT_TexelSize.y);
-                return float4(dx, dy, 1, 1);
+                    (tex2D(_DepthRT, float2(i.tex.x, i.tex.y + _DepthRT_TexelSize.y * _NormalSampleRad)).x -
+                        tex2D(_DepthRT, float2(i.tex.x, i.tex.y - _DepthRT_TexelSize.y * _NormalSampleRad)).x) / (2.0 * _DepthRT_TexelSize.y * _NormalSampleRad);
+                return float4(normalize(float3(dx, dy, 1)), 1);
+            }
+            ENDCG
+        }
+
+        // pass 4: volume restoration
+        Pass{
+            Tags { "RenderType" = "Transparent" }
+            ZWrite Off
+            ZTest Off
+            Blend One One
+
+            CGPROGRAM
+            #pragma target 5.0
+            #pragma vertex vert
+            #pragma geometry geom
+            #pragma fragment frag
+
+            #include "UnityCG.cginc"
+
+            struct GridInfo {
+                int2 particleRange;
+                float3 barycenter;
+                int particleNum;
+                int layer;
+            };
+
+            float _VolumeRad;
+            float _Aspect;
+
+            StructuredBuffer<GridInfo> _GridInfoBuffer;
+
+            struct v2g {
+                float4 pos : POSITION;
+                int n : TEXCOORD0;              // particle num in a grid cell
+            };
+
+            struct g2f {
+                float4 pos : SV_POSITION;
+                float2 center : TEXCOORD0;
+                float2 screenPos : TEXCOORD1;
+                int n : TEXTCOORD2;
+            };
+
+            v2g vert(uint id : SV_VertexID) {
+                v2g output;
+                output.pos = float4(_GridInfoBuffer[id].barycenter, 1.0);
+                output.n = _GridInfoBuffer[id].particleNum;
+                return output;
             }
 
+            [maxvertexcount(4)]
+            void geom(point v2g input[1], inout TriangleStream<g2f> outStream) {
+                g2f output;
+                // 非NarrowBand粒子 应该被剔除
+                if (input[0].n <= 0) {
+                    output.pos = float4(1, 1, 1, 1e-3);  // 在裁剪阶段会被剔除
+                    output.center = float2(0, 0);
+                    output.screenPos = float2(0, 0);
+                    output.n = 0;
+                    outStream.Append(output);
+                    outStream.Append(output);
+                    outStream.Append(output);
+                    outStream.RestartStrip();
+                    return;
+                }
+
+                float4 viewPos = mul(UNITY_MATRIX_V, input[0].pos);
+                float4 projPos = mul(UNITY_MATRIX_P, viewPos);
+                float2 center = 0.5 * (projPos.xy / projPos.w) + float2(0.5, 0.5);
+                float panelScale = 0.14 * abs(viewPos.z);        // view.z越大 panel越大
+
+                for (int x = 0; x < 2; ++x) {
+                    for (int y = 0; y < 2; ++y) {
+                        float2 tex = float2(x, y);
+                        float4 offset = float4((tex * 2 - float2(1, 1)) * panelScale, 0, 0);
+                        // offset.y *= _Aspect;
+                        output.pos = mul(UNITY_MATRIX_P, viewPos + offset);
+                        output.center = center;
+                        output.screenPos = 0.5 * (output.pos.xy / output.pos.w) + 0.5;
+                        output.n = input[0].n;
+                        outStream.Append(output);
+                    }
+                }
+                outStream.RestartStrip();
+            }
+
+            float4 frag(g2f i) : SV_Target{
+                float2 offset = i.screenPos - i.center;
+                offset.x *= _Aspect;
+                float dist = length(offset);
+                // clip(_VolumeRad - dist);
+                float x = dist * 60;
+                float gaussVal = i.n * exp(-x * x * 0.2) * 0.005;
+
+                // return float4(1, 1, 1, 1);
+                return float4(gaussVal, gaussVal, gaussVal, 1);
+            }
             ENDCG
         }
     }

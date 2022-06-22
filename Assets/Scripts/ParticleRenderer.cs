@@ -29,6 +29,8 @@ namespace PositionBasedFluid {
         int m_DepthRT;
         int m_DepthFilterRT;
         int m_NormalMapRT;
+        int m_VolumeRT;
+        int m_VolumeFilterRT;
 
         MaterialPropertyBlock m_MatPropBlock;
         CommandBuffer m_ParticleRenderCmd;  // 计算particle深度
@@ -81,10 +83,14 @@ namespace PositionBasedFluid {
             m_DepthFilterRT = Shader.PropertyToID("_DepthFilterRT");
             int depthFilterRT = Shader.PropertyToID("_DepthFilterRTTmp");
             m_NormalMapRT = Shader.PropertyToID("_NormalMap");
+            m_VolumeRT = Shader.PropertyToID("_VolumeRT");
+            m_VolumeFilterRT = Shader.PropertyToID("_VolumeFilterRT");
+            int volumeFilterRT = Shader.PropertyToID("_VolumeFilterRTTmp");
 
             m_MatPropBlock = new MaterialPropertyBlock();
             m_MatPropBlock.SetBuffer("_Particles", m_Simulator.GetBuffer());
             m_MatPropBlock.SetBuffer("_IsNarrowBand", m_IsNarrowBandBuffer);
+            m_MatPropBlock.SetBuffer("_GridInfoBuffer", m_GridInfoBuffer);
 
             // render Narrow Band Particle
             m_ParticleRenderCmd = new CommandBuffer{ name = "Particle Depth" };
@@ -95,10 +101,14 @@ namespace PositionBasedFluid {
             m_ParticleRenderCmd.DrawProcedural(
                 Matrix4x4.identity, m_ParticleRenderMat, 0, MeshTopology.Points, m_ParticleNum, 1, m_MatPropBlock);
             
-            // Gauss Filter
+            // Depth Gauss Filter
             m_ParticleRenderCmd.GetTemporaryRT(m_DepthFilterRT, Screen.width / 2, Screen.height / 2, 0, FilterMode.Bilinear, RenderTextureFormat.ARGBFloat);
             m_ParticleRenderCmd.GetTemporaryRT(depthFilterRT, Screen.width / 2, Screen.height / 2, 0, FilterMode.Bilinear, RenderTextureFormat.ARGBFloat);
             m_ParticleRenderCmd.Blit(m_DepthRT, m_DepthFilterRT);
+            m_ParticleRenderMat.SetFloat("_FilterRad", 1.0f);
+            m_ParticleRenderCmd.Blit(m_DepthFilterRT, depthFilterRT, m_ParticleRenderMat, 1);   // vertical filter
+            m_ParticleRenderCmd.Blit(depthFilterRT, m_DepthFilterRT, m_ParticleRenderMat, 2);   // horizontal filter
+            m_ParticleRenderMat.SetFloat("_FilterRad", 1.8f);
             m_ParticleRenderCmd.Blit(m_DepthFilterRT, depthFilterRT, m_ParticleRenderMat, 1);   // vertical filter
             m_ParticleRenderCmd.Blit(depthFilterRT, m_DepthFilterRT, m_ParticleRenderMat, 2);   // horizontal filter
             m_ParticleRenderCmd.Blit(m_DepthFilterRT, m_DepthRT);
@@ -106,7 +116,29 @@ namespace PositionBasedFluid {
             // normal map
             m_ParticleRenderCmd.GetTemporaryRT(m_NormalMapRT, -1, -1, 0, FilterMode.Bilinear, RenderTextureFormat.ARGBFloat);
             m_ParticleRenderCmd.Blit(m_DepthRT, m_NormalMapRT, m_ParticleRenderMat, 3);
-            m_ParticleRenderCmd.Blit(m_NormalMapRT, BuiltinRenderTextureType.CameraTarget);
+
+            // Volume restoration
+            m_MatPropBlock.SetFloat("_Aspect", (float)Screen.width / Screen.height);
+            m_ParticleRenderCmd.GetTemporaryRT(m_VolumeRT, -1, -1, 24, FilterMode.Bilinear, RenderTextureFormat.ARGBFloat);
+            m_ParticleRenderCmd.SetRenderTarget(m_VolumeRT);
+            m_ParticleRenderCmd.ClearRenderTarget(true, true, Color.black);
+            m_ParticleRenderCmd.DrawProcedural(
+                Matrix4x4.identity, m_ParticleRenderMat, 4, MeshTopology.Points, m_GridNum, 1, m_MatPropBlock);
+
+            // Volume Gauss Filter
+            //m_ParticleRenderCmd.GetTemporaryRT(m_VolumeFilterRT, Screen.width / 2, Screen.height / 2, 0, FilterMode.Bilinear, RenderTextureFormat.ARGBFloat);
+            //m_ParticleRenderCmd.GetTemporaryRT(volumeFilterRT, Screen.width / 2, Screen.height / 2, 0, FilterMode.Bilinear, RenderTextureFormat.ARGBFloat);
+            //m_ParticleRenderCmd.Blit(m_VolumeRT, m_VolumeFilterRT);
+            //m_ParticleRenderMat.SetFloat("_FilterRad", 1.0f);
+            //m_ParticleRenderCmd.Blit(m_VolumeFilterRT, volumeFilterRT, m_ParticleRenderMat, 1);   // vertical filter
+            //m_ParticleRenderCmd.Blit(volumeFilterRT, m_VolumeFilterRT, m_ParticleRenderMat, 2);   // horizontal filter
+            //m_ParticleRenderMat.SetFloat("_FilterRad", 1.8f);
+            //m_ParticleRenderCmd.Blit(m_VolumeFilterRT, volumeFilterRT, m_ParticleRenderMat, 1);   // vertical filter
+            //m_ParticleRenderCmd.Blit(volumeFilterRT, m_VolumeFilterRT, m_ParticleRenderMat, 2);   // horizontal filter
+            //m_ParticleRenderCmd.Blit(m_VolumeFilterRT, m_VolumeRT);
+
+
+            m_ParticleRenderCmd.Blit(m_VolumeRT, BuiltinRenderTextureType.CameraTarget);
 
             m_MainCamera.AddCommandBuffer(CameraEvent.BeforeImageEffects, m_ParticleRenderCmd);
 
