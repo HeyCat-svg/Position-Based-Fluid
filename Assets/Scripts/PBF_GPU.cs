@@ -345,13 +345,13 @@ namespace PositionBasedFluid {
             // 喷溅模式全体粒子初始化在某圆面上 初始速度一样
             // 放置模式全体粒子初始化在domain内的正方体中
             if (m_InitMode == InitMode.PLACE) {
-                AABB waterDomain = new AABB(m_BorderMin + 0.1f * m_Border.GetRange(), m_BorderMax - 0.1f * m_Border.GetRange());
+                AABB waterDomain = new AABB(m_BorderMin + 0.15f * m_Border.GetRange(), m_BorderMax - 0.15f * m_Border.GetRange());
                 for (int i = fluidParticleStartIdx; i < m_ParticleNum; ++i) {
                     Vector3 pos = new Vector3(
                         waterDomain.minPos.x + Random.value * waterDomain.GetRange().x,
                         waterDomain.minPos.y + Random.value * waterDomain.GetRange().y,
                         waterDomain.minPos.z + Random.value * waterDomain.GetRange().z);
-                    m_ParticleArray[i] = new Particle(pos, m_Gravity, 1);
+                    m_ParticleArray[i] = new Particle(pos, m_Gravity, 1, -1, new Vector3(10, 0, 0));
                 }
             }
             else if (m_InitMode == InitMode.SPLASH) {

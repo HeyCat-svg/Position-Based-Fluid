@@ -6,6 +6,7 @@
         _NormalSampleRad("NormalSampleRadius", Range(0.01, 3)) = 1
         _VolumeRad("VolumeRadius", Range(0.001, 3)) = 0.005
         _SampleDelta("SampleDelta", Range(0.1, 2)) = 1
+        _WaterColor("Water Color", Color) = (0.756, 0.90244, 1.0)
     }
     SubShader {
         // pass 0: conpute linear depth
@@ -461,6 +462,77 @@
                     return float4(0, 0, 0, 1);
                 }
                 return float4(float3(0.756, 0.90244, 1.0) * exp(-2 * vol), 1);
+            }
+
+            ENDCG
+        }
+
+        // pass 7: final light rendering
+        Pass {
+            Tags { "RenderType" = "Opaque" "LightMode" = "ForwardBase" }
+            ZWrite Off
+            ZTest Off
+
+            CGPROGRAM
+            #pragma target 5.0
+            #pragma vertex vert
+            #pragma fragment frag
+            #pragma multi_compile_fwdbase
+
+            #include "UnityCG.cginc"
+
+            struct a2v {
+                float4 vertex : POSITION;
+                float2 tex : TEXCOORD0;
+            };
+
+            struct v2f {
+                float4 vertex : SV_POSITION;
+                float2 tex : TEXCOORD0;
+            };
+
+            float _TanHalfFOV;              // tan vertical half FOV
+            float _Aspect;
+            float4 _WaterColor;
+            sampler2D _NormalMap;
+            sampler2D _VolumeMap;
+            sampler2D _DepthMap;            // linear depth
+            float4 _LightColor0;            // unity builtin var
+
+            v2f vert(a2v i) {
+                v2f o;
+                o.vertex = UnityObjectToClipPos(i.vertex);
+                o.tex = i.tex;
+                return o;
+            }
+
+            float4 frag(v2f i) : SV_Target{
+                // rebuild view pos from linear depth
+                float viewDepth = tex2D(_DepthMap, i.tex).x * _ProjectionParams.z;
+                clip(viewDepth - 1e-4);
+                float2 uv_ = 2.0 * i.tex - 1.0;
+                float3 viewPos = viewDepth * float3(uv_.x * _TanHalfFOV * _Aspect, uv_.y * _TanHalfFOV, -1);    // view space is right-hand-coord
+
+                // convert light pos or light dir to view space;
+                float4 viewLightPos = mul(UNITY_MATRIX_V, _WorldSpaceLightPos0);
+                float3 viewLightDir = normalize(viewLightPos.xyz - viewLightPos.w * viewPos);
+
+                float3 viewNormal = tex2D(_NormalMap, i.tex).rgb;     // get normal from normal map
+                float3 viewDir = normalize(mul(UNITY_MATRIX_V, _WorldSpaceCameraPos).xyz - viewPos);
+                float3 halfDir = 0.5 * (viewDir + viewLightDir);
+                float attenuation = exp(-2 * tex2D(_VolumeMap, i.tex).x);
+
+                half3 albedo = _WaterColor.rgb;
+                // half3 ambient = max(ShadeSH9(half4(0.0, 1.0, 0.0, 1.0)), ShadeSH9(half4(0.0, -1.0, 0.0, 1.0)));
+                half3 ambient = float3(0.2, 0.2, 0.2);
+                half nl = saturate(dot(viewNormal, viewLightDir));
+                half nh = max(dot(viewNormal, halfDir), 1e-5);
+                half3 diff = albedo * nl;
+                half3 spec = pow(nh, 20) * albedo * float3(1, 1, 1);    // gradient * albedo * specColor
+                
+                half3 col = ambient * albedo + (diff + spec) * _LightColor0.rgb * attenuation;
+
+                return float4(col, 1.0);
             }
 
             ENDCG

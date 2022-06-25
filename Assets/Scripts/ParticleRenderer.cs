@@ -33,6 +33,7 @@ namespace PositionBasedFluid {
         int m_VolumeRT;
         int m_VolumeFilterRT;
         int m_LightAttenuationRT;
+        int m_FinalLightRT;
 
         MaterialPropertyBlock m_MatPropBlock;
         CommandBuffer m_ParticleRenderCmd;  // 计算particle深度
@@ -62,9 +63,9 @@ namespace PositionBasedFluid {
         }
 
         void OnDestroy () {
-            if (m_MainCamera != null) {
-                m_MainCamera.RemoveCommandBuffer(CameraEvent.BeforeImageEffects, m_ParticleRenderCmd);
-            }
+            //if (m_MainCamera != null) {
+            //    m_MainCamera.RemoveCommandBuffer(CameraEvent.BeforeImageEffects, m_ParticleRenderCmd);
+            //}
             if (m_GridInfoBuffer != null) {
                 m_GridInfoBuffer.Release();
                 m_GridInfoBuffer = null;
@@ -81,14 +82,15 @@ namespace PositionBasedFluid {
 
         void InitCommandBuffer() {
             m_DepthRT = Shader.PropertyToID("_DepthRT");
-            int depthRTDepthBuffer = Shader.PropertyToID("_DepthBuffer");
+            int depthRTDepthBuffer = Shader.PropertyToID("_DepthBufferRT");
             m_DepthFilterRT = Shader.PropertyToID("_DepthFilterRT");
             int depthFilterRT = Shader.PropertyToID("_DepthFilterRTTmp");
-            m_NormalMapRT = Shader.PropertyToID("_NormalMap");
+            m_NormalMapRT = Shader.PropertyToID("_NormalMapRT");
             m_VolumeRT = Shader.PropertyToID("_VolumeRT");
             m_VolumeFilterRT = Shader.PropertyToID("_VolumeFilterRT");
             int volumeFilterRT = Shader.PropertyToID("_VolumeFilterRTTmp");
             m_LightAttenuationRT = Shader.PropertyToID("_LightAttenuationRT");
+            m_FinalLightRT = Shader.PropertyToID("_FinalLightRT");
 
             m_MatPropBlock = new MaterialPropertyBlock();
             m_MatPropBlock.SetBuffer("_Particles", m_Simulator.GetBuffer());
@@ -151,12 +153,21 @@ namespace PositionBasedFluid {
             m_ParticleRenderCmd.SetGlobalTexture("_SampleSource", m_VolumeFilterRT);
             m_ParticleRenderCmd.Blit(m_VolumeFilterRT, m_VolumeRT, m_ParticleRenderMat, 5);
 
-            // light attenuation
-            m_ParticleRenderCmd.GetTemporaryRT(m_LightAttenuationRT, -1, -1, 0, FilterMode.Bilinear, RenderTextureFormat.ARGBFloat);
-            m_ParticleRenderCmd.SetGlobalTexture("_VolumeTex", m_VolumeRT);
-            m_ParticleRenderCmd.Blit(m_VolumeRT, m_LightAttenuationRT, m_ParticleRenderMat, 6);
+            //// light attenuation
+            //m_ParticleRenderCmd.GetTemporaryRT(m_LightAttenuationRT, -1, -1, 0, FilterMode.Bilinear, RenderTextureFormat.ARGBFloat);
+            //m_ParticleRenderCmd.SetGlobalTexture("_VolumeTex", m_VolumeRT);
+            //m_ParticleRenderCmd.Blit(m_VolumeRT, m_LightAttenuationRT, m_ParticleRenderMat, 6);
 
-            m_ParticleRenderCmd.Blit(m_LightAttenuationRT, BuiltinRenderTextureType.CameraTarget);
+            // true light rendering
+            m_ParticleRenderCmd.GetTemporaryRT(m_FinalLightRT, -1, -1, 0, FilterMode.Bilinear, RenderTextureFormat.ARGBFloat);
+            m_ParticleRenderCmd.SetGlobalFloat("_TanHalfFOV", Mathf.Tan(0.5f * Mathf.Deg2Rad * m_MainCamera.fieldOfView));
+            m_ParticleRenderCmd.SetGlobalFloat("_Aspect", (float)Screen.width / Screen.height);
+            m_ParticleRenderCmd.SetGlobalTexture("_NormalMap", m_NormalMapRT);
+            m_ParticleRenderCmd.SetGlobalTexture("_VolumeMap", m_VolumeRT);
+            m_ParticleRenderCmd.SetGlobalTexture("_DepthMap", m_DepthRT);
+            m_ParticleRenderCmd.Blit(m_FinalLightRT, m_FinalLightRT, m_ParticleRenderMat, 7);
+
+            m_ParticleRenderCmd.Blit(m_FinalLightRT, BuiltinRenderTextureType.CameraTarget);
             m_MainCamera.AddCommandBuffer(CameraEvent.BeforeImageEffects, m_ParticleRenderCmd);
 
             Debug.Log("Render command added!");
